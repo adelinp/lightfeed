@@ -10,18 +10,9 @@ function toTimestampMs(rawValue) {
   return Number.isNaN(parsedValue) ? null : parsedValue;
 }
 
-function toArticleFeedKey(article, fallbackKey) {
-  const sourceFeedId = String(article?.sourceFeedId ?? "").trim();
-  if (sourceFeedId) {
-    return `feed:${sourceFeedId}`;
-  }
-
-  const sourceUrl = String(article?.sourceUrl ?? "").trim();
-  if (sourceUrl) {
-    return `source-url:${sourceUrl}`;
-  }
-
-  return `scope:${fallbackKey}`;
+function toTrackingScopeKey(trackingKey) {
+  const normalizedKey = String(trackingKey ?? "").trim();
+  return `scope:${normalizedKey || "default"}`;
 }
 
 function parseStoredRefreshMap(rawValue) {
@@ -61,12 +52,9 @@ export function NewsFeedList({
     [savedArticleLinks],
   );
   const currentRefreshAtMs = useMemo(() => toTimestampMs(fetchedAt), [fetchedAt]);
-  const currentFeedKeys = useMemo(
-    () =>
-      Array.from(
-        new Set(articles.map((article) => toArticleFeedKey(article, trackingKey))),
-      ),
-    [articles, trackingKey],
+  const trackingScopeKey = useMemo(
+    () => toTrackingScopeKey(trackingKey),
+    [trackingKey],
   );
 
   useEffect(() => {
@@ -89,15 +77,13 @@ export function NewsFeedList({
       return;
     }
 
-    if (currentFeedKeys.length === 0) {
+    if (articles.length === 0) {
       return;
     }
 
     const nextStoredRefreshByFeedMs = { ...storedRefreshByFeedMs };
     const currentRefreshAtIso = new Date(currentRefreshAtMs).toISOString();
-    for (const feedKey of currentFeedKeys) {
-      nextStoredRefreshByFeedMs[feedKey] = currentRefreshAtIso;
-    }
+    nextStoredRefreshByFeedMs[trackingScopeKey] = currentRefreshAtIso;
 
     try {
       window.localStorage.setItem(
@@ -107,15 +93,13 @@ export function NewsFeedList({
     } catch {
       // Ignore storage write failures (private mode, storage disabled, etc).
     }
-  }, [currentFeedKeys, currentRefreshAtMs]);
+  }, [articles.length, currentRefreshAtMs, trackingScopeKey]);
 
   const rows = useMemo(
     () =>
       articles.map((article) => {
         const publishedAtMs = Number(article.publishedAtMs);
-        const feedKey = toArticleFeedKey(article, trackingKey);
-        const previousRefreshAtMs =
-          previousRefreshByFeedMs[feedKey] ?? null;
+        const previousRefreshAtMs = previousRefreshByFeedMs[trackingScopeKey] ?? null;
         const hasPreviousRefresh =
           isTrackingReady && previousRefreshAtMs !== null;
         const hasPublishedDate =
@@ -131,7 +115,7 @@ export function NewsFeedList({
           isNewSinceRefresh,
         };
       }),
-    [articles, isTrackingReady, previousRefreshByFeedMs, trackingKey],
+    [articles, isTrackingReady, previousRefreshByFeedMs, trackingScopeKey],
   );
 
   const hasPreviousRefresh = rows.some((row) => row.hasPreviousRefresh);
