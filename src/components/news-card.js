@@ -166,6 +166,7 @@ export function NewsCard({
   initialIsSaved = false,
   actionMode = "save-toggle",
   onRemoved,
+  isNewSinceRefresh = false,
 }) {
   const [isSaved, setIsSaved] = useState(initialIsSaved);
   const [isPending, setIsPending] = useState(false);
@@ -278,7 +279,20 @@ export function NewsCard({
               <span>{sourceLabel}</span>
             )}
             {redditSubredditLabel ? <span>{redditSubredditLabel}</span> : null}
-            {article.publishedLabel ? <span>{article.publishedLabel}</span> : null}
+            {article.publishedLabel ? (
+              <span className="inline-flex items-center gap-2">
+                <span>{article.publishedLabel}</span>
+                {isNewSinceRefresh ? (
+                  <span className="rounded-sm bg-amber-400 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-stone-950">
+                    NEW
+                  </span>
+                ) : null}
+              </span>
+            ) : isNewSinceRefresh ? (
+              <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-white">
+                NEW
+              </span>
+            ) : null}
           </div>
 
         </div>

@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { Alert } from "@/components/alert";
 import { AppShell } from "@/components/app-shell";
 import { FeedGhostList } from "@/components/feed-ghost-list";
-import { NewsCard } from "@/components/news-card";
+import { NewsFeedList } from "@/components/news-feed-list";
 import { getPageById } from "@/lib/lightfeed-data";
 import { getPageFeedStream } from "@/lib/rss-stream";
 import { listSavedArticleLinksByLinks } from "@/lib/saved-articles-db";
@@ -13,14 +13,6 @@ import LucideIcon from "@/components/lucide-icon";
 import { Settings } from "lucide";
 
 export const dynamic = "force-dynamic";
-
-function toSourceFilterValue(rawValue) {
-  if (Array.isArray(rawValue)) {
-    return toSourceFilterValue(rawValue[0]);
-  }
-
-  return String(rawValue ?? "").trim();
-}
 
 function toSafeHttpUrl(rawValue) {
   const value = String(rawValue ?? "").trim();
@@ -88,11 +80,9 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function FeedDetailPage({ params, searchParams }) {
+export default async function FeedDetailPage({ params }) {
   const { id } = await params;
-  const resolvedSearchParams = await searchParams;
   const page = getPageById(id);
-  const selectedSource = toSourceFilterValue(resolvedSearchParams?.source);
 
   if (!page) {
     notFound();
@@ -101,13 +91,13 @@ export default async function FeedDetailPage({ params, searchParams }) {
   return (
     <AppShell>
       <Suspense fallback={<FeedGhostList count={5} titleWidthClass="w-64" />}>
-        <FeedDetailContent page={page} selectedSource={selectedSource} />
+        <FeedDetailContent page={page} />
       </Suspense>
     </AppShell>
   );
 }
 
-async function FeedDetailContent({ page, selectedSource }) {
+async function FeedDetailContent({ page }) {
   const stream = await getPageFeedStream(page.id, { limit: 24 });
   const blend = stream.items;
   const feedErrors = stream.feedErrors;
@@ -115,28 +105,26 @@ async function FeedDetailContent({ page, selectedSource }) {
   const sourceKeys = new Set();
 
   for (const article of blend) {
-    const sourceId = toSourceFilterValue(article.sourceFeedId);
-    if (!sourceId || sourceKeys.has(sourceId)) {
+    const sourceDomain = toSafeHostname(article.sourceUrl);
+    const sourceKey =
+      sourceDomain ||
+      toSafeHttpUrl(article.sourceUrl) ||
+      String(article.sourceFeedId || article.sourceTitle || article.id);
+
+    if (!sourceKey || sourceKeys.has(sourceKey)) {
       continue;
     }
 
-    sourceKeys.add(sourceId);
+    sourceKeys.add(sourceKey);
     sources.push({
-      id: sourceId,
+      id: sourceKey,
       title: article.sourceTitle || "Unknown source",
       imageUrl: toSourceImageUrl(article.sourceImage, article.sourceUrl),
     });
   }
 
-  const hasSelectedSource =
-    Boolean(selectedSource) && sources.some((source) => source.id === selectedSource);
-  const visibleItems = hasSelectedSource
-    ? blend.filter(
-        (article) => toSourceFilterValue(article.sourceFeedId) === selectedSource,
-      )
-    : blend;
   const savedArticleLinks = listSavedArticleLinksByLinks(
-    visibleItems.map((article) => article.link),
+    blend.map((article) => article.link),
   );
 
   return (
@@ -156,21 +144,13 @@ async function FeedDetailContent({ page, selectedSource }) {
           </div>
           {sources.length > 0 ? (
             <div className="mt-2 flex flex-row items-center gap-2">
-              <span className="text-sm font-semibold text-stone-500">Sources:</span>
               {sources.map((source) => {
-                const isSelected = source.id === selectedSource;
-
                 return (
-                  <Link
+                  <div
                     key={source.id}
-                    href={`/feeds/${page.id}?source=${encodeURIComponent(source.id)}`}
-                    aria-label={`Filter by ${source.title}`}
                     title={source.title}
-                    className={`block h-8 w-8 overflow-hidden border border-stone-200 rounded-md ${
-                      isSelected
-                        ? "border-stone-950 ring-2 ring-stone-950/20 dark:border-stone-100 dark:ring-stone-100/40"
-                        : "border-stone-300 hover:border-stone-500 dark:border-stone-700 dark:hover:border-stone-500"
-                    }`}
+                    aria-label={source.title}
+                    className="block h-8 w-8 overflow-hidden rounded-md"
                   >
                     {source.imageUrl ? (
                       <img
@@ -184,22 +164,9 @@ async function FeedDetailContent({ page, selectedSource }) {
                         {source.title.slice(0, 1).toUpperCase()}
                       </span>
                     )}
-                  </Link>
+                  </div>
                 );
               })}
-
-              {hasSelectedSource ? (
-                <Link
-                  href={`/feeds/${page.id}`}
-                  className={`ml-1 rounded-md border px-2.5 py-1.5 text-xs font-semibold ${
-                    hasSelectedSource
-                      ? "border-stone-300 text-stone-800 hover:border-stone-500 hover:text-stone-950 dark:border-stone-700 dark:text-stone-200 dark:hover:border-stone-500 dark:hover:text-stone-100"
-                      : "border-stone-200 text-stone-400 dark:border-stone-800 dark:text-stone-600"
-                  }`}
-                >
-                  Reset
-                </Link>
-              ) : null}
             </div>
           ) : null}
         </div>
@@ -228,22 +195,17 @@ async function FeedDetailContent({ page, selectedSource }) {
       </section>
 
       <section className=" ">
-        <ul className="space-y-8">
-          {visibleItems.map((article) => (
-            <NewsCard
-              key={article.id}
-              article={article}
-              pageContext={{ id: page.id, name: page.name }}
-              initialIsSaved={savedArticleLinks.has(article.link)}
-            />
-          ))}
-        </ul>
+        <NewsFeedList
+          articles={blend}
+          pageContext={{ id: page.id, name: page.name }}
+          savedArticleLinks={Array.from(savedArticleLinks)}
+          fetchedAt={stream.fetchedAt}
+          trackingKey={`page:${page.id}`}
+        />
 
-        {visibleItems.length === 0 ? (
+        {blend.length === 0 ? (
           <p className="mt-4 text-sm text-stone-700 dark:text-stone-300">
-            {hasSelectedSource
-              ? "No RSS items were returned for the selected source."
-              : "No RSS items were returned for this feed."}
+            No RSS items were returned for this feed.
           </p>
         ) : null}
       </section>

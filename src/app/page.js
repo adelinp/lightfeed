@@ -5,7 +5,7 @@ import { Alert } from "@/components/alert";
 import { AppShell } from "@/components/app-shell";
 import LucideIcon from "@/components/lucide-icon";
 import { FeedGhostList } from "@/components/feed-ghost-list";
-import { NewsCard } from "@/components/news-card";
+import { NewsFeedList } from "@/components/news-feed-list";
 import { getHomepagePage } from "@/lib/lightfeed-data";
 import { getPageFeedStream } from "@/lib/rss-stream";
 import { listSavedArticleLinksByLinks } from "@/lib/saved-articles-db";
@@ -99,16 +99,14 @@ async function HomeFeedSection({ activePage }) {
         </Alert>
       ) : null}
 
-      <ul className="mt-4 space-y-8">
-        {feedItems.map((article) => (
-          <NewsCard
-            key={article.id}
-            article={article}
-            pageContext={activePage ? { id: activePage.id, name: activePage.name } : null}
-            initialIsSaved={savedArticleLinks.has(article.link)}
-          />
-        ))}
-      </ul>
+      <NewsFeedList
+        articles={feedItems}
+        pageContext={activePage ? { id: activePage.id, name: activePage.name } : null}
+        savedArticleLinks={Array.from(savedArticleLinks)}
+        fetchedAt={stream.fetchedAt}
+        trackingKey={activePage ? `page:${activePage.id}` : "home:none"}
+        className="mt-4 space-y-8"
+      />
 
       {feedItems.length === 0 ? (
         <p className="mt-5 text-sm text-stone-700 dark:text-stone-300">
