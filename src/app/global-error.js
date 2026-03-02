@@ -6,15 +6,40 @@ import { useEffect } from "react";
 
 const themeInitScript = `
   (() => {
+    const THEME_STORAGE_KEY = "lightfeed-theme";
+    const THEME_MEDIA_QUERY = "(prefers-color-scheme: dark)";
+
+    const normalizeThemeMode = (rawTheme) => {
+      const value = String(rawTheme ?? "").trim().toLowerCase();
+      if (value === "light" || value === "dark" || value === "system") {
+        return value;
+      }
+
+      return "system";
+    };
+
+    const resolveTheme = (themeMode) => {
+      if (themeMode === "system") {
+        try {
+          return window.matchMedia(THEME_MEDIA_QUERY).matches ? "dark" : "light";
+        } catch (_error) {
+          return "light";
+        }
+      }
+
+      return themeMode;
+    };
+
     try {
-      const storedTheme = localStorage.getItem("lightfeed-theme");
-      const theme = storedTheme === "dark" ? "dark" : "light";
+      const themeMode = normalizeThemeMode(localStorage.getItem(THEME_STORAGE_KEY));
+      const theme = resolveTheme(themeMode);
       const root = document.documentElement;
       root.classList.toggle("dark", theme === "dark");
       root.setAttribute("data-theme", theme);
     } catch (_error) {
-      document.documentElement.classList.remove("dark");
-      document.documentElement.setAttribute("data-theme", "light");
+      const fallbackTheme = resolveTheme("system");
+      document.documentElement.classList.toggle("dark", fallbackTheme === "dark");
+      document.documentElement.setAttribute("data-theme", fallbackTheme);
     }
   })();
 `;

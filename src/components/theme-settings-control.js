@@ -39,6 +39,18 @@ export function ThemeSettingsControl() {
         >
           Dark
         </button>
+        <button
+          type="button"
+          onClick={() => setTheme("system")}
+          aria-pressed={theme === "system"}
+          className={`cursor-pointer rounded px-3 py-1.5 text-xs font-semibold transition ${
+            theme === "system"
+              ? "bg-white text-stone-900 shadow-sm dark:bg-stone-200 dark:text-stone-900"
+              : "text-stone-700 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100"
+          }`}
+        >
+          System
+        </button>
       </div>
     </div>
   );
