@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import { Alert } from "@/components/alert";
 import { AppShell } from "@/components/app-shell";
 import { FeedGhostList } from "@/components/feed-ghost-list";
-import { NewsCard } from "@/components/news-card";
+import { NewsFeedList } from "@/components/news-feed-list";
 import { getPageById } from "@/lib/lightfeed-data";
 import { getPageFeedStream } from "@/lib/rss-stream";
 import { listSavedArticleLinksByLinks } from "@/lib/saved-articles-db";
@@ -195,16 +195,13 @@ async function FeedDetailContent({ page }) {
       </section>
 
       <section className=" ">
-        <ul className="space-y-8">
-          {blend.map((article) => (
-            <NewsCard
-              key={article.id}
-              article={article}
-              pageContext={{ id: page.id, name: page.name }}
-              initialIsSaved={savedArticleLinks.has(article.link)}
-            />
-          ))}
-        </ul>
+        <NewsFeedList
+          articles={blend}
+          pageContext={{ id: page.id, name: page.name }}
+          savedArticleLinks={Array.from(savedArticleLinks)}
+          fetchedAt={stream.fetchedAt}
+          trackingKey={`page:${page.id}`}
+        />
 
         {blend.length === 0 ? (
           <p className="mt-4 text-sm text-stone-700 dark:text-stone-300">
