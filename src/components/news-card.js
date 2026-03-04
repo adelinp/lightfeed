@@ -191,13 +191,19 @@ export function NewsCard({
   );
 
   const buttonLabel = getButtonLabel({ mode: actionMode, isSaved, isPending });
-  const articleHref = useMemo(() => {
-    if (!openWithArchive) {
-      return article.link;
-    }
+  // const articleHref = useMemo(() => {
+  //   if (!openWithArchive) {
+  //     return article.link;
+  //   }
 
-    return toArchiveIsUrl(article.link);
-  }, [openWithArchive, article.link]);
+  //   return toArchiveIsUrl(article.link);
+  // }, [openWithArchive, article.link]);
+    const archiveHref = useMemo(() => toArchiveIsUrl(article.link), [article.link]);
+
+  // Keep this as the "default" href used by image/title clicks
+  const articleHref = useMemo(() => {
+    return openWithArchive ? archiveHref : article.link;
+  }, [openWithArchive, archiveHref, article.link]);
   const imageLinkLabel = article.title ? `Open article: ${article.title}` : "Open article";
 
   if (isHidden) {
@@ -356,7 +362,7 @@ export function NewsCard({
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
+            {/* <Button
               href={articleHref}
               target="_blank"
               rel="noopener noreferrer"
@@ -364,6 +370,27 @@ export function NewsCard({
             >
               <LucideIcon icon={ExternalLink} />
               {openWithArchive ? "Read Via archive.is" : "Read Article"}
+            </Button> */}
+            <Button
+              href={article.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-8 px-3 text-xs"
+              variant={openWithArchive ? "secondary" : "primary"}
+            >
+              <LucideIcon icon={ExternalLink} />
+              Read Article
+            </Button>
+
+            <Button
+              href={archiveHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-8 px-3 text-xs"
+              variant={openWithArchive ? "primary" : "secondary"}
+            >
+              <LucideIcon icon={ExternalLink} />
+              Read via archive.is
             </Button>
             <Button
               onClick={handleSaveToggle}

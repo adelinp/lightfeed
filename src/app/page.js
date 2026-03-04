@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 import { Settings } from "lucide";
+import { cookies } from "next/headers";
 import { Alert } from "@/components/alert";
 import { AppShell } from "@/components/app-shell";
 import LucideIcon from "@/components/lucide-icon";
@@ -16,8 +17,23 @@ export const metadata = {
   description: "Your latest headlines from configured RSS feeds.",
 };
 
-export default function HomePage() {
+// Cookie-based global limit
+const COOKIE_NAME = "lightfeed_items_per_feed";
+const DEFAULT_LIMIT = 28;
+const MIN_LIMIT = 5;
+const MAX_LIMIT = 200;
+
+function clampInt(n, fallback) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, Math.floor(v)));
+}
+
+export default function HomePage({ searchParams }) {
   const activePage = getHomepagePage();
+
+  // Next passes searchParams as an object (can be undefined)
+  const pageNumber = clampInt(searchParams?.page ?? 1, 1);
 
   return (
     <AppShell>
@@ -29,19 +45,30 @@ export default function HomePage() {
           />
         }
       >
-        <HomeFeedSection activePage={activePage} />
+        <HomeFeedSection activePage={activePage} pageNumber={pageNumber} />
       </Suspense>
     </AppShell>
   );
 }
 
-async function HomeFeedSection({ activePage }) {
+async function HomeFeedSection({ activePage, pageNumber }) {
+  const cookieStore = cookies();
+  const limitFromCookie = cookieStore.get(COOKIE_NAME)?.value;
+  const limit = clampInt(limitFromCookie, DEFAULT_LIMIT);
+
+  const currentPage = clampInt(pageNumber, 1);
+  const offset = (currentPage - 1) * limit;
+
   const stream = activePage
-    ? await getPageFeedStream(activePage.id, { limit: 28 })
+    ? await getPageFeedStream(activePage.id, { limit: offset + limit + 1 })
     : { items: [], feedErrors: [], fetchedAt: null };
 
-  const feedItems = stream.items;
+  const allItems = stream.items;
   const feedErrors = stream.feedErrors;
+
+  const hasMore = allItems.length > offset + limit;
+  const feedItems = allItems.slice(offset, offset + limit);
+
   const savedArticleLinks = listSavedArticleLinksByLinks(
     feedItems.map((article) => article.link),
   );
@@ -66,7 +93,10 @@ async function HomeFeedSection({ activePage }) {
               Settings
             </Link>
           ) : (
-            <Link className="flex items-center gap-2 font-bold text-xs hover:underline" href="/feeds">
+            <Link
+              className="flex items-center gap-2 font-bold text-xs hover:underline"
+              href="/feeds"
+            >
               Manage Feeds
             </Link>
           )}
@@ -101,12 +131,41 @@ async function HomeFeedSection({ activePage }) {
 
       <NewsFeedList
         articles={feedItems}
-        pageContext={activePage ? { id: activePage.id, name: activePage.name } : null}
+        pageContext={
+          activePage ? { id: activePage.id, name: activePage.name } : null
+        }
         savedArticleLinks={Array.from(savedArticleLinks)}
         fetchedAt={stream.fetchedAt}
         trackingKey={activePage ? `page:${activePage.id}` : "home:none"}
         className="mt-4 space-y-8"
       />
+
+      {/* Pagination */}
+      {activePage && allItems.length > 0 ? (
+        <div className="mt-6 flex items-center justify-between">
+          <Link
+            className={`text-sm underline ${
+              currentPage <= 1 ? "pointer-events-none opacity-40" : ""
+            }`}
+            href={`/?page=${Math.max(1, currentPage - 1)}`}
+          >
+            Prev
+          </Link>
+
+          <span className="text-xs text-stone-600 dark:text-stone-400">
+            Page {currentPage} · Showing {feedItems.length} items · Limit {limit}
+          </span>
+
+          <Link
+            className={`text-sm underline ${
+              !hasMore ? "pointer-events-none opacity-40" : ""
+            }`}
+            href={`/?page=${currentPage + 1}`}
+          >
+            Next
+          </Link>
+        </div>
+      ) : null}
 
       {feedItems.length === 0 ? (
         <p className="mt-5 text-sm text-stone-700 dark:text-stone-300">

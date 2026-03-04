@@ -1,7 +1,8 @@
 /* eslint-disable @next/next/no-img-element */
 import Link from "next/link";
 import { Suspense } from "react";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { cookies } from "next/headers";
 import { Alert } from "@/components/alert";
 import { AppShell } from "@/components/app-shell";
 import { FeedGhostList } from "@/components/feed-ghost-list";
@@ -14,16 +15,35 @@ import { Settings } from "lucide";
 
 export const dynamic = "force-dynamic";
 
+const COOKIE_NAME = "lightfeed_items_per_feed";
+const DEFAULT_LIMIT = 24;
+const MIN_LIMIT = 5;
+const MAX_LIMIT = 200;
+
+// When a source filter is active, we may need to fetch more blended items
+// to fill a page for that single source.
+const MAX_FILTER_FETCH = 800; // keep reasonable; RSS feeds often cap anyway
+const FILTER_FETCH_MULTIPLIER = 12;
+
+function clampLimit(n, fallback) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, Math.floor(v)));
+}
+
+function clampPage(n, fallback = 1) {
+  const v = Number(n);
+  if (!Number.isFinite(v)) return fallback;
+  return Math.max(1, Math.floor(v));
+}
+
 function toSafeHttpUrl(rawValue) {
   const value = String(rawValue ?? "").trim();
   if (!value) return null;
 
   try {
     const parsed = new URL(value);
-    if (!["http:", "https:"].includes(parsed.protocol)) {
-      return null;
-    }
-
+    if (!["http:", "https:"].includes(parsed.protocol)) return null;
     return parsed.toString();
   } catch {
     return null;
@@ -52,15 +72,30 @@ function toLogoDevUrl(domain) {
     fallback: "404",
   });
 
-  if (token) {
-    params.set("token", token);
-  }
+  if (token) params.set("token", token);
 
   return `https://img.logo.dev/${encodeURIComponent(domain)}?${params.toString()}`;
 }
 
 function toSourceImageUrl(sourceImage, sourceUrl) {
   return toLogoDevUrl(toSafeHostname(sourceUrl)) ?? toSafeHttpUrl(sourceImage);
+}
+
+function getSourceKey(article) {
+  const sourceDomain = toSafeHostname(article?.sourceUrl);
+  return (
+    sourceDomain ||
+    toSafeHttpUrl(article?.sourceUrl) ||
+    String(article?.sourceFeedId || article?.sourceTitle || article?.id)
+  );
+}
+
+function buildFeedHref(pageId, { page, source } = {}) {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  if (page && page > 1) params.set("page", String(page));
+  const qs = params.toString();
+  return qs ? `/feeds/${pageId}?${qs}` : `/feeds/${pageId}`;
 }
 
 export async function generateMetadata({ params }) {
@@ -80,40 +115,76 @@ export async function generateMetadata({ params }) {
   };
 }
 
-export default async function FeedDetailPage({ params }) {
+export default async function FeedDetailPage({ params, searchParams }) {
   const { id } = await params;
   const page = getPageById(id);
 
-  if (!page) {
-    notFound();
-  }
+  if (!page) notFound();
+
+  const sp = (await searchParams) ?? {};
+  const pageNumber = clampPage(sp.page ?? 1, 1);
+
+  const selectedSource =
+    typeof sp.source === "string" && sp.source.trim()
+      ? sp.source.trim()
+      : null;
 
   return (
     <AppShell>
       <Suspense fallback={<FeedGhostList count={5} titleWidthClass="w-64" />}>
-        <FeedDetailContent page={page} />
+        <FeedDetailContent
+          page={page}
+          pageNumber={pageNumber}
+          selectedSource={selectedSource}
+        />
       </Suspense>
     </AppShell>
   );
 }
 
-async function FeedDetailContent({ page }) {
-  const stream = await getPageFeedStream(page.id, { limit: 24 });
-  const blend = stream.items;
+async function FeedDetailContent({ page, pageNumber, selectedSource }) {
+  const cookieStore = await cookies();
+  const limitFromCookie = cookieStore.get(COOKIE_NAME)?.value;
+  const limit = clampLimit(limitFromCookie, DEFAULT_LIMIT);
+
+  const currentPage = clampPage(pageNumber, 1);
+  const offset = (currentPage - 1) * limit;
+
+  const baseNeed = offset + limit + 1;
+  const fetchLimit = selectedSource
+    ? Math.min(
+        MAX_FILTER_FETCH,
+        Math.max(baseNeed, baseNeed * FILTER_FETCH_MULTIPLIER),
+      )
+    : baseNeed;
+
+  const stream = await getPageFeedStream(page.id, { limit: fetchLimit });
+  const allItems = stream.items;
   const feedErrors = stream.feedErrors;
+
+  // Filter first (if requested), then paginate within the filtered list.
+  const filteredItems = selectedSource
+    ? allItems.filter((a) => getSourceKey(a) === selectedSource)
+    : allItems;
+
+  const totalForDisplayWhenFiltered = filteredItems.length;
+
+  // If user asks for a page beyond what's available for this filter, redirect to first page.
+  if (currentPage > 1 && filteredItems.length <= offset) {
+    redirect(buildFeedHref(page.id, { source: selectedSource || undefined }));
+  }
+
+  const hasMore = filteredItems.length > offset + limit;
+  const blend = filteredItems.slice(offset, offset + limit);
+
+  // Build source icons from all fetched items (not just the current page),
+  // so you can click to switch to a source even if it isn't present on this page.
   const sources = [];
   const sourceKeys = new Set();
 
-  for (const article of blend) {
-    const sourceDomain = toSafeHostname(article.sourceUrl);
-    const sourceKey =
-      sourceDomain ||
-      toSafeHttpUrl(article.sourceUrl) ||
-      String(article.sourceFeedId || article.sourceTitle || article.id);
-
-    if (!sourceKey || sourceKeys.has(sourceKey)) {
-      continue;
-    }
+  for (const article of allItems) {
+    const sourceKey = getSourceKey(article);
+    if (!sourceKey || sourceKeys.has(sourceKey)) continue;
 
     sourceKeys.add(sourceKey);
     sources.push({
@@ -123,9 +194,36 @@ async function FeedDetailContent({ page }) {
     });
   }
 
+  // Counts per source (for the currently displayed page)
+  const sourceCounts = new Map();
+  for (const article of blend) {
+    const sourceKey = getSourceKey(article);
+    const title = article.sourceTitle || "Unknown source";
+    const entry = sourceCounts.get(sourceKey) ?? {
+      key: sourceKey,
+      title,
+      count: 0,
+    };
+    entry.count += 1;
+    sourceCounts.set(sourceKey, entry);
+  }
+  const sourceCountsList = Array.from(sourceCounts.values()).sort(
+    (a, b) => b.count - a.count,
+  );
+
   const savedArticleLinks = listSavedArticleLinksByLinks(
     blend.map((article) => article.link),
   );
+
+  // Header counters: show "sources" as 1 when a single-source filter is active.
+  const visibleSourceCount = selectedSource ? 1 : sources.length;
+  const visibleSourceLabel = visibleSourceCount === 1 ? "source" : "sources";
+
+  // Pagination label: on filtered view we show the total items in that source;
+  // on unfiltered view show how many items are available in the fetched window.
+  const totalAvailableLabel = selectedSource
+    ? totalForDisplayWhenFiltered
+    : allItems.length;
 
   return (
     <>
@@ -135,43 +233,138 @@ async function FeedDetailContent({ page }) {
             <h2 className="mt-1 w-full font-serif text-4xl font-semibold tracking-tight text-stone-950 truncate dark:text-stone-100">
               {page.name}
             </h2>
-            <Link 
+
+            <Link
               className="flex items-center gap-2 font-bold text-xs hover:text-stone-700 dark:text-stone-300 dark:hover:text-stone-100"
-              href={`/feeds/${page.id}/edit`}>
+              href={`/feeds/${page.id}/edit`}
+            >
               <LucideIcon icon={Settings} />
               Settings
             </Link>
           </div>
-          {sources.length > 0 ? (
-            <div className="mt-2 flex flex-row items-center gap-2">
-              {sources.map((source) => {
-                return (
-                  <div
-                    key={source.id}
-                    title={source.title}
-                    aria-label={source.title}
-                    className="block h-8 w-8 overflow-hidden rounded-md"
+
+          {sources.length > 0 && (
+            <div className="mt-2 flex flex-col gap-2">
+              <div className="flex flex-row items-center gap-2">
+                {sources.map((source) => {
+                  const isActive = selectedSource === source.id;
+                  const isDimmed = selectedSource && !isActive;
+
+                  return (
+                    <Link
+                      key={source.id}
+                      href={
+                        isActive
+                          ? buildFeedHref(page.id) // clicking active clears filter
+                          : buildFeedHref(page.id, { source: source.id })
+                      }
+                      title={
+                        isActive
+                          ? `${source.title} (click to clear)`
+                          : `Show only ${source.title}`
+                      }
+                      aria-label={source.title}
+                      className={`block h-8 w-8 overflow-hidden rounded-md transition ${
+                        isDimmed ? "opacity-30" : "opacity-100"
+                      } ${isActive ? "ring-2 ring-stone-500" : ""}`}
+                    >
+                      {source.imageUrl ? (
+                        <img
+                          src={source.imageUrl}
+                          alt={source.title}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <span className="flex h-full w-full items-center justify-center rounded-md bg-stone-200 text-xs font-semibold text-stone-700 dark:bg-stone-700 dark:text-stone-100">
+                          {source.title.slice(0, 1).toUpperCase()}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+
+                {selectedSource ? (
+                  <Link
+                    className="ml-2 text-xs underline text-stone-600 dark:text-stone-300"
+                    href={buildFeedHref(page.id)}
+                    title="Clear source filter"
                   >
-                    {source.imageUrl ? (
-                      <img
-                        src={source.imageUrl}
-                        alt={source.title}
-                        className="h-full w-full object-cover"
-                        loading="lazy"
-                      />
-                    ) : (
-                      <span className="flex h-full w-full items-center justify-center rounded-md bg-stone-200 text-xs font-semibold text-stone-700 dark:bg-stone-700 dark:text-stone-100">
-                        {source.title.slice(0, 1).toUpperCase()}
+                    Clear
+                  </Link>
+                ) : null}
+              </div>
+
+              {sourceCountsList.length > 0 && (
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 dark:text-stone-400">
+                  {sourceCountsList.map((s) => (
+                    <span key={s.key} className="whitespace-nowrap">
+                      <span className="font-semibold text-stone-700 dark:text-stone-300">
+                        {s.count}
                       </span>
-                    )}
-                  </div>
-                );
-              })}
+                      {" · "}
+                      {s.title}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Summary line (improved) */}
+              <div className="text-xs text-stone-600 dark:text-stone-400">
+                {selectedSource ? (
+                  <>
+                    Showing{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {blend.length}
+                    </span>{" "}
+                    of{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {totalForDisplayWhenFiltered}
+                    </span>{" "}
+                    from{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {selectedSource}
+                    </span>{" "}
+                    ·{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {visibleSourceCount}
+                    </span>{" "}
+                    {visibleSourceLabel}
+                  </>
+                ) : (
+                  <>
+                    Showing{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {blend.length}
+                    </span>{" "}
+                    of{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {allItems.length}
+                    </span>{" "}
+                    articles ·{" "}
+                    <span className="font-semibold text-stone-700 dark:text-stone-300">
+                      {visibleSourceCount}
+                    </span>{" "}
+                    {visibleSourceLabel}
+                  </>
+                )}
+              </div>
             </div>
-          ) : null}
+          )}
         </div>
 
-        {feedErrors.length > 0 ? (
+        {selectedSource && allItems.length >= MAX_FILTER_FETCH ? (
+          <Alert
+            tone="warning"
+            className="mt-4 text-xs"
+            title="Filtered view may be incomplete"
+          >
+            This source filter is based on the latest fetched items. Some older
+            items may not be available from RSS or within the current fetch limit.
+          </Alert>
+        ) : null}
+
+        {feedErrors.length > 0 && (
           <Alert
             tone="warning"
             className="mt-4 text-xs"
@@ -182,7 +375,7 @@ async function FeedDetailContent({ page }) {
                 <li key={error.feedId}>
                   <span className="font-semibold">{error.feedTitle}</span>
                   {" · "}
-                  <Link href={`/feeds/${page.id}`} className="underline">
+                  <Link href={buildFeedHref(page.id)} className="underline">
                     {page.name}
                   </Link>
                   {" · "}
@@ -191,23 +384,83 @@ async function FeedDetailContent({ page }) {
               ))}
             </ul>
           </Alert>
-        ) : null}
+        )}
       </section>
 
-      <section className=" ">
+      <section>
         <NewsFeedList
           articles={blend}
           pageContext={{ id: page.id, name: page.name }}
           savedArticleLinks={Array.from(savedArticleLinks)}
           fetchedAt={stream.fetchedAt}
-          trackingKey={`page:${page.id}`}
+          trackingKey={`page:${page.id}${
+            selectedSource ? `:source:${selectedSource}` : ""
+          }`}
         />
 
-        {blend.length === 0 ? (
+        {blend.length > 0 && (
+          <div className="mt-8 flex items-center justify-between text-sm">
+            <div className="flex items-center gap-4">
+              <Link
+                className={`underline ${
+                  currentPage <= 1 ? "pointer-events-none opacity-40" : ""
+                }`}
+                href={buildFeedHref(page.id, {
+                  source: selectedSource || undefined,
+                })}
+              >
+                First
+              </Link>
+
+              <Link
+                className={`underline ${
+                  currentPage <= 1 ? "pointer-events-none opacity-40" : ""
+                }`}
+                href={buildFeedHref(page.id, {
+                  source: selectedSource || undefined,
+                  page: Math.max(1, currentPage - 1),
+                })}
+              >
+                Prev
+              </Link>
+            </div>
+
+            {/* Pagination label (improved) */}
+            <span className="text-xs text-stone-600 dark:text-stone-400">
+              Page {currentPage} ·{" "}
+              <span className="font-semibold text-stone-700 dark:text-stone-300">
+                {blend.length}
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-stone-700 dark:text-stone-300">
+                {totalAvailableLabel}
+              </span>{" "}
+              {selectedSource ? "from this source" : "articles"} · Page size{" "}
+              <span className="font-semibold text-stone-700 dark:text-stone-300">
+                {limit}
+              </span>
+              {selectedSource ? " · Filtered" : ""}
+            </span>
+
+            <Link
+              className={`underline ${
+                !hasMore ? "pointer-events-none opacity-40" : ""
+              }`}
+              href={buildFeedHref(page.id, {
+                source: selectedSource || undefined,
+                page: currentPage + 1,
+              })}
+            >
+              Next
+            </Link>
+          </div>
+        )}
+
+        {blend.length === 0 && (
           <p className="mt-4 text-sm text-stone-700 dark:text-stone-300">
             No RSS items were returned for this feed.
           </p>
-        ) : null}
+        )}
       </section>
     </>
   );
