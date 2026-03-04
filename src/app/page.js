@@ -29,11 +29,12 @@ function clampInt(n, fallback) {
   return Math.max(MIN_LIMIT, Math.min(MAX_LIMIT, Math.floor(v)));
 }
 
-export default function HomePage({ searchParams }) {
+export default async function HomePage({ searchParams }) {
+  const sp = (await searchParams) ?? {};
   const activePage = getHomepagePage();
 
   // Next passes searchParams as an object (can be undefined)
-  const pageNumber = clampInt(searchParams?.page ?? 1, 1);
+  const pageNumber = clampInt(sp.page ?? 1, 1);
 
   return (
     <AppShell>
@@ -52,7 +53,7 @@ export default function HomePage({ searchParams }) {
 }
 
 async function HomeFeedSection({ activePage, pageNumber }) {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const limitFromCookie = cookieStore.get(COOKIE_NAME)?.value;
   const limit = clampInt(limitFromCookie, DEFAULT_LIMIT);
 
