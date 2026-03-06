@@ -19,10 +19,8 @@ const COOKIE_NAME = "lightfeed_items_per_feed";
 const DEFAULT_LIMIT = 24;
 const MIN_LIMIT = 5;
 const MAX_LIMIT = 200;
-
-// When a source filter is active, we may need to fetch more blended items
-// to fill a page for that single source.
-const MAX_FILTER_FETCH = 800; // keep reasonable; RSS feeds often cap anyway
+const TOTAL_FETCH_LIMIT = 1000;
+const MAX_FILTER_FETCH = 800;
 const FILTER_FETCH_MULTIPLIER = 12;
 
 function clampLimit(n, fallback) {
@@ -62,8 +60,29 @@ function toSafeHostname(rawValue) {
   }
 }
 
-function toLogoDevUrl(domain) {
+function getLogoDomainOverrides() {
+  const raw = String(process.env.NEXT_PUBLIC_LOGO_DOMAIN_OVERRIDES ?? "").trim();
+  const map = new Map();
+
+  if (!raw) return map;
+
+  for (const pair of raw.split(",")) {
+    const [from, to] = pair.split("=").map((v) => String(v ?? "").trim().toLowerCase());
+    if (from && to) map.set(from, to);
+  }
+
+  return map;
+}
+
+function applyLogoDomainOverride(domain) {
   if (!domain) return null;
+  const overrides = getLogoDomainOverrides();
+  return overrides.get(domain.toLowerCase()) || domain;
+}
+
+function toLogoDevUrl(domain) {
+  const effectiveDomain = applyLogoDomainOverride(domain);
+  if (!effectiveDomain) return null;
 
   const token = String(process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN ?? "").trim();
   const params = new URLSearchParams({
@@ -74,19 +93,18 @@ function toLogoDevUrl(domain) {
 
   if (token) params.set("token", token);
 
-  return `https://img.logo.dev/${encodeURIComponent(domain)}?${params.toString()}`;
+  return `https://img.logo.dev/${encodeURIComponent(effectiveDomain)}?${params.toString()}`;
 }
 
 function toSourceImageUrl(sourceImage, sourceUrl) {
-  return toLogoDevUrl(toSafeHostname(sourceUrl)) ?? toSafeHttpUrl(sourceImage);
+  const domain = toSafeHostname(sourceUrl);
+  return toLogoDevUrl(domain) ?? toSafeHttpUrl(sourceImage);
 }
 
 function getSourceKey(article) {
-  const sourceDomain = toSafeHostname(article?.sourceUrl);
-  return (
-    sourceDomain ||
-    toSafeHttpUrl(article?.sourceUrl) ||
-    String(article?.sourceFeedId || article?.sourceTitle || article?.id)
+  return String(
+    article?.sourceFeedId ||
+      `${article?.sourceTitle || "unknown"}::${article?.sourceUrl || article?.feedUrl || article?.link || article?.id}`,
   );
 }
 
@@ -156,20 +174,18 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
         MAX_FILTER_FETCH,
         Math.max(baseNeed, baseNeed * FILTER_FETCH_MULTIPLIER),
       )
-    : baseNeed;
+    : TOTAL_FETCH_LIMIT;
 
   const stream = await getPageFeedStream(page.id, { limit: fetchLimit });
-  const allItems = stream.items;
-  const feedErrors = stream.feedErrors;
+  const allItems = stream.items ?? [];
+  const feedErrors = stream.feedErrors ?? [];
 
-  // Filter first (if requested), then paginate within the filtered list.
   const filteredItems = selectedSource
     ? allItems.filter((a) => getSourceKey(a) === selectedSource)
     : allItems;
 
   const totalForDisplayWhenFiltered = filteredItems.length;
 
-  // If user asks for a page beyond what's available for this filter, redirect to first page.
   if (currentPage > 1 && filteredItems.length <= offset) {
     redirect(buildFeedHref(page.id, { source: selectedSource || undefined }));
   }
@@ -177,26 +193,29 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
   const hasMore = filteredItems.length > offset + limit;
   const blend = filteredItems.slice(offset, offset + limit);
 
-  // Build source icons from all fetched items (not just the current page),
-  // so you can click to switch to a source even if it isn't present on this page.
   const sources = [];
   const sourceKeys = new Set();
+  let sourceOrdinal = 0;
 
   for (const article of allItems) {
     const sourceKey = getSourceKey(article);
     if (!sourceKey || sourceKeys.has(sourceKey)) continue;
 
     sourceKeys.add(sourceKey);
+    sourceOrdinal += 1;
+
     sources.push({
       id: sourceKey,
+      ordinal: sourceOrdinal,
       title: article.sourceTitle || "Unknown source",
       imageUrl: toSourceImageUrl(article.sourceImage, article.sourceUrl),
     });
   }
 
-  // Counts per source (for the currently displayed page)
   const sourceCounts = new Map();
-  for (const article of blend) {
+  const countBase = selectedSource ? filteredItems : allItems;
+
+  for (const article of countBase) {
     const sourceKey = getSourceKey(article);
     const title = article.sourceTitle || "Unknown source";
     const entry = sourceCounts.get(sourceKey) ?? {
@@ -207,23 +226,29 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
     entry.count += 1;
     sourceCounts.set(sourceKey, entry);
   }
+
   const sourceCountsList = Array.from(sourceCounts.values()).sort(
     (a, b) => b.count - a.count,
   );
+
+  const totalArticlesAcrossSources = sourceCountsList.reduce(
+    (sum, source) => sum + Number(source.count || 0),
+    0,
+  );
+
+  const activeSource = sources.find((source) => source.id === selectedSource);
+  const activeSourceTitle = activeSource?.title || selectedSource;
 
   const savedArticleLinks = listSavedArticleLinksByLinks(
     blend.map((article) => article.link),
   );
 
-  // Header counters: show "sources" as 1 when a single-source filter is active.
   const visibleSourceCount = selectedSource ? 1 : sources.length;
   const visibleSourceLabel = visibleSourceCount === 1 ? "source" : "sources";
 
-  // Pagination label: on filtered view we show the total items in that source;
-  // on unfiltered view show how many items are available in the fetched window.
   const totalAvailableLabel = selectedSource
     ? totalForDisplayWhenFiltered
-    : allItems.length;
+    : totalArticlesAcrossSources;
 
   return (
     <>
@@ -255,31 +280,41 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                       key={source.id}
                       href={
                         isActive
-                          ? buildFeedHref(page.id) // clicking active clears filter
+                          ? buildFeedHref(page.id)
                           : buildFeedHref(page.id, { source: source.id })
                       }
                       title={
                         isActive
-                          ? `${source.title} (click to clear)`
-                          : `Show only ${source.title}`
+                          ? `${source.title} #${source.ordinal} (click to clear)`
+                          : `Show only ${source.title} #${source.ordinal}`
                       }
-                      aria-label={source.title}
-                      className={`block h-8 w-8 overflow-hidden rounded-md transition ${
+                      aria-label={`${source.title} ${source.ordinal}`}
+                      className={`relative block h-8 w-8 overflow-visible transition ${
                         isDimmed ? "opacity-30" : "opacity-100"
-                      } ${isActive ? "ring-2 ring-stone-500" : ""}`}
+                      }`}
                     >
-                      {source.imageUrl ? (
-                        <img
-                          src={source.imageUrl}
-                          alt={source.title}
-                          className="h-full w-full object-cover"
-                          loading="lazy"
-                        />
-                      ) : (
-                        <span className="flex h-full w-full items-center justify-center rounded-md bg-stone-200 text-xs font-semibold text-stone-700 dark:bg-stone-700 dark:text-stone-100">
-                          {source.title.slice(0, 1).toUpperCase()}
-                        </span>
-                      )}
+                      <div
+                        className={`h-8 w-8 overflow-hidden rounded-md ${
+                          isActive ? "ring-2 ring-stone-500" : ""
+                        }`}
+                      >
+                        {source.imageUrl ? (
+                          <img
+                            src={source.imageUrl}
+                            alt={source.title}
+                            className="h-full w-full object-cover"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center rounded-md bg-stone-200 text-xs font-semibold text-stone-700 dark:bg-stone-700 dark:text-stone-100">
+                            {source.title.slice(0, 1).toUpperCase()}
+                          </span>
+                        )}
+                      </div>
+
+                      <span className="absolute -right-1 -top-1 min-w-[1rem] rounded-full bg-stone-900 px-1 text-center text-[10px] leading-4 text-white dark:bg-stone-100 dark:text-stone-900">
+                        {source.ordinal}
+                      </span>
                     </Link>
                   );
                 })}
@@ -297,19 +332,22 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
 
               {sourceCountsList.length > 0 && (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 dark:text-stone-400">
-                  {sourceCountsList.map((s) => (
-                    <span key={s.key} className="whitespace-nowrap">
-                      <span className="font-semibold text-stone-700 dark:text-stone-300">
-                        {s.count}
+                  {sourceCountsList.map((s) => {
+                    const sourceMeta = sources.find((source) => source.id === s.key);
+                    return (
+                      <span key={s.key} className="whitespace-nowrap">
+                        <span className="font-semibold text-stone-700 dark:text-stone-300">
+                          {s.count}
+                        </span>
+                        {" · "}
+                        {s.title}
+                        {sourceMeta ? ` #${sourceMeta.ordinal}` : ""}
                       </span>
-                      {" · "}
-                      {s.title}
-                    </span>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
-              {/* Summary line (improved) */}
               <div className="text-xs text-stone-600 dark:text-stone-400">
                 {selectedSource ? (
                   <>
@@ -323,7 +361,8 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                     </span>{" "}
                     from{" "}
                     <span className="font-semibold text-stone-700 dark:text-stone-300">
-                      {selectedSource}
+                      {activeSourceTitle}
+                      {activeSource ? ` #${activeSource.ordinal}` : ""}
                     </span>{" "}
                     ·{" "}
                     <span className="font-semibold text-stone-700 dark:text-stone-300">
@@ -339,7 +378,7 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                     </span>{" "}
                     of{" "}
                     <span className="font-semibold text-stone-700 dark:text-stone-300">
-                      {allItems.length}
+                      {totalArticlesAcrossSources}
                     </span>{" "}
                     articles ·{" "}
                     <span className="font-semibold text-stone-700 dark:text-stone-300">
@@ -425,7 +464,6 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
               </Link>
             </div>
 
-            {/* Pagination label (improved) */}
             <span className="text-xs text-stone-600 dark:text-stone-400">
               Page {currentPage} ·{" "}
               <span className="font-semibold text-stone-700 dark:text-stone-300">

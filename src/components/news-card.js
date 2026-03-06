@@ -2,12 +2,15 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Alert } from "@/components/alert";
 import { Button } from "@/components/button";
 import LucideIcon from "./lucide-icon";
 import { Bookmark, ExternalLink } from "lucide";
 import { useArchiveLinksPreference } from "@/components/use-archive-links-preference";
+
+const SAVED_ARTICLES_STORAGE_KEY = "lightfeed_saved_articles_v1";
+const MAX_SAVED_ARTICLES = 30;
 
 function getButtonVariant({ mode, isSaved }) {
   if (mode === "remove-only") {
@@ -56,8 +59,31 @@ function toSafeHostname(rawValue) {
   }
 }
 
-function toLogoDevUrl(domain) {
+function getLogoDomainOverrides() {
+  const raw = String(process.env.NEXT_PUBLIC_LOGO_DOMAIN_OVERRIDES ?? "").trim();
+  const map = new Map();
+
+  if (!raw) return map;
+
+  for (const pair of raw.split(",")) {
+    const [from, to] = pair
+      .split("=")
+      .map((v) => String(v ?? "").trim().toLowerCase());
+    if (from && to) map.set(from, to);
+  }
+
+  return map;
+}
+
+function applyLogoDomainOverride(domain) {
   if (!domain) return null;
+  const overrides = getLogoDomainOverrides();
+  return overrides.get(domain.toLowerCase()) || domain;
+}
+
+function toLogoDevUrl(domain) {
+  const effectiveDomain = applyLogoDomainOverride(domain);
+  if (!effectiveDomain) return null;
 
   const token = String(process.env.NEXT_PUBLIC_LOGO_DEV_TOKEN ?? "").trim();
   const params = new URLSearchParams({
@@ -70,7 +96,7 @@ function toLogoDevUrl(domain) {
     params.set("token", token);
   }
 
-  return `https://img.logo.dev/${encodeURIComponent(domain)}?${params.toString()}`;
+  return `https://img.logo.dev/${encodeURIComponent(effectiveDomain)}?${params.toString()}`;
 }
 
 function isRedditHostname(hostname) {
@@ -160,6 +186,60 @@ function toArchiveIsUrl(rawValue) {
   return `https://archive.is/newest/${encodeURIComponent(safeUrl)}`;
 }
 
+function normalizeArticleForSave(article, pageContext = null) {
+  return {
+    id: article?.id ?? article?.link,
+    link: article?.link,
+    title: article?.title ?? "",
+    summary: article?.summary ?? "",
+    imageUrl: article?.imageUrl ?? null,
+    sourceTitle: article?.sourceTitle ?? "Unknown source",
+    sourceUrl: article?.sourceUrl ?? null,
+    sourceImage: article?.sourceImage ?? null,
+    sourceFeedId: article?.sourceFeedId ?? null,
+    publishedLabel: article?.publishedLabel ?? null,
+    pageContext: pageContext ?? null,
+    savedAt: Date.now(),
+  };
+}
+
+function loadSavedArticles() {
+  if (typeof window === "undefined") return [];
+
+  try {
+    const raw = window.localStorage.getItem(SAVED_ARTICLES_STORAGE_KEY);
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter(
+      (article) =>
+        article &&
+        typeof article === "object" &&
+        typeof article.link === "string" &&
+        article.link.trim(),
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedArticles(articles) {
+  if (typeof window === "undefined") return;
+
+  window.localStorage.setItem(
+    SAVED_ARTICLES_STORAGE_KEY,
+    JSON.stringify(articles),
+  );
+
+  window.dispatchEvent(new CustomEvent("lightfeed:saved-articles-changed"));
+}
+
+function isArticleSavedInList(articles, articleLink) {
+  return articles.some((item) => item.link === articleLink);
+}
+
 export function NewsCard({
   article,
   pageContext = null,
@@ -191,20 +271,43 @@ export function NewsCard({
   );
 
   const buttonLabel = getButtonLabel({ mode: actionMode, isSaved, isPending });
-  // const articleHref = useMemo(() => {
-  //   if (!openWithArchive) {
-  //     return article.link;
-  //   }
+  const archiveHref = useMemo(() => toArchiveIsUrl(article.link), [article.link]);
 
-  //   return toArchiveIsUrl(article.link);
-  // }, [openWithArchive, article.link]);
-    const archiveHref = useMemo(() => toArchiveIsUrl(article.link), [article.link]);
-
-  // Keep this as the "default" href used by image/title clicks
   const articleHref = useMemo(() => {
     return openWithArchive ? archiveHref : article.link;
   }, [openWithArchive, archiveHref, article.link]);
+
   const imageLinkLabel = article.title ? `Open article: ${article.title}` : "Open article";
+
+  useEffect(() => {
+    function syncSavedState() {
+      const savedArticles = loadSavedArticles();
+      setIsSaved(isArticleSavedInList(savedArticles, article.link));
+    }
+
+    syncSavedState();
+
+    function handleStorage(event) {
+      if (!event.key || event.key === SAVED_ARTICLES_STORAGE_KEY) {
+        syncSavedState();
+      }
+    }
+
+    function handleSavedArticlesChanged() {
+      syncSavedState();
+    }
+
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener("lightfeed:saved-articles-changed", handleSavedArticlesChanged);
+
+    return () => {
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(
+        "lightfeed:saved-articles-changed",
+        handleSavedArticlesChanged,
+      );
+    };
+  }, [article.link]);
 
   if (isHidden) {
     return null;
@@ -219,19 +322,11 @@ export function NewsCard({
     const shouldRemove = actionMode === "remove-only" || isSaved;
 
     try {
+      const existing = loadSavedArticles();
+
       if (shouldRemove) {
-        const response = await fetch("/api/saved-articles", {
-          method: "DELETE",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ link: article.link }),
-        });
-
-        if (!response.ok && response.status !== 404) {
-          throw new Error("Could not remove article.");
-        }
-
+        const updated = existing.filter((item) => item.link !== article.link);
+        writeSavedArticles(updated);
         setIsSaved(false);
 
         if (actionMode === "remove-only") {
@@ -242,21 +337,11 @@ export function NewsCard({
         return;
       }
 
-      const response = await fetch("/api/saved-articles", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          article,
-          page: pageContext,
-        }),
-      });
+      const normalizedArticle = normalizeArticleForSave(article, pageContext);
+      const deduped = existing.filter((item) => item.link !== article.link);
+      const updated = [normalizedArticle, ...deduped].slice(0, MAX_SAVED_ARTICLES);
 
-      if (!response.ok) {
-        throw new Error("Could not save article.");
-      }
-
+      writeSavedArticles(updated);
       setIsSaved(true);
     } catch (error) {
       const message =
@@ -268,7 +353,7 @@ export function NewsCard({
   }
 
   return (
-    <li className="rounded-xl bg-white p-4 md:p-5 transition-all shadow-xl shadow-transparent hover:shadow-stone-200 dark:bg-stone-900/80 dark:hover:shadow-stone-900/40">
+    <li className="rounded-xl bg-white p-4 shadow-xl shadow-transparent transition-all hover:shadow-stone-200 md:p-5 dark:bg-stone-900/80 dark:hover:shadow-stone-900/40">
       <article className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-semibold text-stone-600 dark:text-stone-300">
           <div className="flex min-w-0 items-center gap-3">
@@ -300,16 +385,15 @@ export function NewsCard({
               </span>
             ) : null}
           </div>
-
         </div>
 
-        <div className="flex flex-col lg:flex-row gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row">
           <div className="flex min-w-0 flex-1 flex-col">
             <Link
               href={articleHref}
               target="_blank"
               rel="noopener noreferrer"
-              className="font-serif text-2xl leading-tight font-semibold text-stone-950 hover:text-stone-700 hover:underline dark:text-stone-100 dark:hover:text-stone-300"
+              className="font-serif text-2xl font-semibold leading-tight text-stone-950 hover:text-stone-700 hover:underline dark:text-stone-100 dark:hover:text-stone-300"
             >
               {article.title}
             </Link>
@@ -362,15 +446,6 @@ export function NewsCard({
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* <Button
-              href={articleHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-8 px-3 text-xs"
-            >
-              <LucideIcon icon={ExternalLink} />
-              {openWithArchive ? "Read Via archive.is" : "Read Article"}
-            </Button> */}
             <Button
               href={article.link}
               target="_blank"
@@ -392,6 +467,7 @@ export function NewsCard({
               <LucideIcon icon={ExternalLink} />
               Read via archive.is
             </Button>
+
             <Button
               onClick={handleSaveToggle}
               disabled={isPending}
