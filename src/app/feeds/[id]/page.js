@@ -67,7 +67,9 @@ function getLogoDomainOverrides() {
   if (!raw) return map;
 
   for (const pair of raw.split(",")) {
-    const [from, to] = pair.split("=").map((v) => String(v ?? "").trim().toLowerCase());
+    const [from, to] = pair
+      .split("=")
+      .map((v) => String(v ?? "").trim().toLowerCase());
     if (from && to) map.set(from, to);
   }
 
@@ -193,29 +195,9 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
   const hasMore = filteredItems.length > offset + limit;
   const blend = filteredItems.slice(offset, offset + limit);
 
-  const sources = [];
-  const sourceKeys = new Set();
-  let sourceOrdinal = 0;
+  const sourceCounts = new Map();
 
   for (const article of allItems) {
-    const sourceKey = getSourceKey(article);
-    if (!sourceKey || sourceKeys.has(sourceKey)) continue;
-
-    sourceKeys.add(sourceKey);
-    sourceOrdinal += 1;
-
-    sources.push({
-      id: sourceKey,
-      ordinal: sourceOrdinal,
-      title: article.sourceTitle || "Unknown source",
-      imageUrl: toSourceImageUrl(article.sourceImage, article.sourceUrl),
-    });
-  }
-
-  const sourceCounts = new Map();
-  const countBase = selectedSource ? filteredItems : allItems;
-
-  for (const article of countBase) {
     const sourceKey = getSourceKey(article);
     const title = article.sourceTitle || "Unknown source";
     const entry = sourceCounts.get(sourceKey) ?? {
@@ -225,6 +207,23 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
     };
     entry.count += 1;
     sourceCounts.set(sourceKey, entry);
+  }
+
+  const sources = [];
+  const sourceKeys = new Set();
+
+  for (const article of allItems) {
+    const sourceKey = getSourceKey(article);
+    if (!sourceKey || sourceKeys.has(sourceKey)) continue;
+
+    sourceKeys.add(sourceKey);
+
+    sources.push({
+      id: sourceKey,
+      title: article.sourceTitle || "Unknown source",
+      imageUrl: toSourceImageUrl(article.sourceImage, article.sourceUrl),
+      count: sourceCounts.get(sourceKey)?.count ?? 0,
+    });
   }
 
   const sourceCountsList = Array.from(sourceCounts.values()).sort(
@@ -274,6 +273,7 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                 {sources.map((source) => {
                   const isActive = selectedSource === source.id;
                   const isDimmed = selectedSource && !isActive;
+                  const countLabel = `${source.count} ${source.count === 1 ? "article" : "articles"}`;
 
                   return (
                     <Link
@@ -285,10 +285,10 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                       }
                       title={
                         isActive
-                          ? `${source.title} #${source.ordinal} (click to clear)`
-                          : `Show only ${source.title} #${source.ordinal}`
+                          ? `${source.title} · ${countLabel} (click to clear)`
+                          : `Show only ${source.title} · ${countLabel}`
                       }
-                      aria-label={`${source.title} ${source.ordinal}`}
+                      aria-label={`${source.title} ${countLabel}`}
                       className={`relative block h-8 w-8 overflow-visible transition ${
                         isDimmed ? "opacity-30" : "opacity-100"
                       }`}
@@ -313,7 +313,7 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                       </div>
 
                       <span className="absolute -right-1 -top-1 min-w-[1rem] rounded-full bg-stone-900 px-1 text-center text-[10px] leading-4 text-white dark:bg-stone-100 dark:text-stone-900">
-                        {source.ordinal}
+                        {source.count}
                       </span>
                     </Link>
                   );
@@ -332,19 +332,15 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
 
               {sourceCountsList.length > 0 && (
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 dark:text-stone-400">
-                  {sourceCountsList.map((s) => {
-                    const sourceMeta = sources.find((source) => source.id === s.key);
-                    return (
-                      <span key={s.key} className="whitespace-nowrap">
-                        <span className="font-semibold text-stone-700 dark:text-stone-300">
-                          {s.count}
-                        </span>
-                        {" · "}
-                        {s.title}
-                        {sourceMeta ? ` #${sourceMeta.ordinal}` : ""}
+                  {sourceCountsList.map((s) => (
+                    <span key={s.key} className="whitespace-nowrap">
+                      <span className="font-semibold text-stone-700 dark:text-stone-300">
+                        {s.count}
                       </span>
-                    );
-                  })}
+                      {" · "}
+                      {s.title}
+                    </span>
+                  ))}
                 </div>
               )}
 
@@ -362,7 +358,6 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
                     from{" "}
                     <span className="font-semibold text-stone-700 dark:text-stone-300">
                       {activeSourceTitle}
-                      {activeSource ? ` #${activeSource.ordinal}` : ""}
                     </span>{" "}
                     ·{" "}
                     <span className="font-semibold text-stone-700 dark:text-stone-300">

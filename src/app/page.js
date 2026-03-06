@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { Settings } from "lucide";
 import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { Alert } from "@/components/alert";
 import { AppShell } from "@/components/app-shell";
 import LucideIcon from "@/components/lucide-icon";
@@ -109,10 +110,22 @@ function getSourceKey(article) {
   );
 }
 
+function buildHomeHref({ page, source } = {}) {
+  const params = new URLSearchParams();
+  if (source) params.set("source", source);
+  if (page && page > 1) params.set("page", String(page));
+  const qs = params.toString();
+  return qs ? `/?${qs}` : "/";
+}
+
 export default async function HomePage({ searchParams }) {
   const sp = (await searchParams) ?? {};
   const activePage = getHomepagePage();
   const pageNumber = clampPage(sp.page ?? 1, 1);
+  const selectedSource =
+    typeof sp.source === "string" && sp.source.trim()
+      ? sp.source.trim()
+      : null;
 
   return (
     <AppShell>
@@ -124,19 +137,22 @@ export default async function HomePage({ searchParams }) {
           />
         }
       >
-        <HomeFeedSection activePage={activePage} pageNumber={pageNumber} />
+        <HomeFeedSection
+          activePage={activePage}
+          pageNumber={pageNumber}
+          selectedSource={selectedSource}
+        />
       </Suspense>
     </AppShell>
   );
 }
 
-async function HomeFeedSection({ activePage, pageNumber }) {
+async function HomeFeedSection({ activePage, pageNumber, selectedSource }) {
   const cookieStore = await cookies();
   const limitFromCookie = cookieStore.get(COOKIE_NAME)?.value;
   const limit = clampLimit(limitFromCookie, DEFAULT_LIMIT);
 
   const currentPage = clampPage(pageNumber, 1);
-  const offset = (currentPage - 1) * limit;
 
   const stream = activePage
     ? await getPageFeedStream(activePage.id, { limit: HOME_TOTAL_FETCH_LIMIT })
@@ -145,30 +161,44 @@ async function HomeFeedSection({ activePage, pageNumber }) {
   const allItems = stream.items ?? [];
   const feedErrors = stream.feedErrors ?? [];
 
-  const totalArticles = allItems.length;
+  const sourceCounts = new Map();
+  for (const article of allItems) {
+    const sourceKey = getSourceKey(article);
+    sourceCounts.set(sourceKey, (sourceCounts.get(sourceKey) ?? 0) + 1);
+  }
+
+  const displayItems = selectedSource
+    ? allItems.filter((article) => getSourceKey(article) === selectedSource)
+    : allItems;
+
+  const totalArticles = displayItems.length;
+  const offset = (currentPage - 1) * limit;
+
+  if (currentPage > 1 && offset >= totalArticles && totalArticles > 0) {
+    redirect(buildHomeHref({ source: selectedSource || undefined }));
+  }
+
   const hasMore = offset + limit < totalArticles;
-  const feedItems = allItems.slice(offset, offset + limit);
+  const feedItems = displayItems.slice(offset, offset + limit);
 
   const sources = [];
   const sourceKeys = new Set();
-  let sourceOrdinal = 0;
 
   for (const article of allItems) {
     const sourceKey = getSourceKey(article);
     if (!sourceKey || sourceKeys.has(sourceKey)) continue;
 
     sourceKeys.add(sourceKey);
-    sourceOrdinal += 1;
 
     sources.push({
       id: sourceKey,
-      ordinal: sourceOrdinal,
       title: article.sourceTitle || "Unknown source",
       imageUrl: toSourceImageUrl(article.sourceImage, article.sourceUrl),
+      count: sourceCounts.get(sourceKey) ?? 0,
     });
   }
 
-  const totalSources = sources.length;
+  const totalSources = selectedSource ? 1 : sources.length;
 
   const savedArticleLinks = listSavedArticleLinksByLinks(
     feedItems.map((article) => article.link),
@@ -206,33 +236,59 @@ async function HomeFeedSection({ activePage, pageNumber }) {
 
       {activePage && sources.length > 0 ? (
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          {sources.map((source) => (
-            <div
-              key={source.id}
-              title={`${source.title} #${source.ordinal}`}
-              aria-label={`${source.title} ${source.ordinal}`}
-              className="relative block h-8 w-8 overflow-visible"
-            >
-              <div className="h-8 w-8 overflow-hidden rounded-md">
-                {source.imageUrl ? (
-                  <img
-                    src={source.imageUrl}
-                    alt={source.title}
-                    className="h-full w-full object-cover"
-                    loading="lazy"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center rounded-md bg-stone-200 text-xs font-semibold text-stone-700 dark:bg-stone-700 dark:text-stone-100">
-                    {source.title.slice(0, 1).toUpperCase()}
-                  </span>
-                )}
-              </div>
+          {sources.map((source) => {
+            const isActive = selectedSource === source.id;
+            const isDimmed = selectedSource && !isActive;
 
-              <span className="absolute -right-1 -top-1 min-w-[1rem] rounded-full bg-stone-900 px-1 text-center text-[10px] leading-4 text-white dark:bg-stone-100 dark:text-stone-900">
-                {source.ordinal}
-              </span>
-            </div>
-          ))}
+            return (
+              <Link
+                key={source.id}
+                href={
+                  isActive
+                    ? buildHomeHref()
+                    : buildHomeHref({ source: source.id })
+                }
+                title={source.title}
+                aria-label={`${source.title} ${source.count}`}
+                className={`relative block h-8 w-8 overflow-visible ${
+                  isDimmed ? "opacity-30" : "opacity-100"
+                }`}
+              >
+                <div
+                  className={`h-8 w-8 overflow-hidden rounded-md ${
+                    isActive ? "ring-2 ring-stone-500" : ""
+                  }`}
+                >
+                  {source.imageUrl ? (
+                    <img
+                      src={source.imageUrl}
+                      alt={source.title}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center rounded-md bg-stone-200 text-xs font-semibold text-stone-700 dark:bg-stone-700 dark:text-stone-100">
+                      {source.title.slice(0, 1).toUpperCase()}
+                    </span>
+                  )}
+                </div>
+
+                <span className="absolute -right-1 -top-1 min-w-[1rem] rounded-full bg-stone-900 px-1 text-center text-[10px] leading-4 text-white dark:bg-stone-100 dark:text-stone-900">
+                  {source.count}
+                </span>
+              </Link>
+            );
+          })}
+
+          {selectedSource ? (
+            <Link
+              className="ml-2 text-xs underline text-stone-600 dark:text-stone-300"
+              href={buildHomeHref()}
+              title="Clear source filter"
+            >
+              Clear
+            </Link>
+          ) : null}
         </div>
       ) : null}
 
@@ -286,7 +342,10 @@ async function HomeFeedSection({ activePage, pageNumber }) {
             className={`text-sm underline ${
               currentPage <= 1 ? "pointer-events-none opacity-40" : ""
             }`}
-            href={`/?page=${Math.max(1, currentPage - 1)}`}
+            href={buildHomeHref({
+              source: selectedSource || undefined,
+              page: Math.max(1, currentPage - 1),
+            })}
           >
             Prev
           </Link>
@@ -300,7 +359,10 @@ async function HomeFeedSection({ activePage, pageNumber }) {
             className={`text-sm underline ${
               !hasMore ? "pointer-events-none opacity-40" : ""
             }`}
-            href={`/?page=${currentPage + 1}`}
+            href={buildHomeHref({
+              source: selectedSource || undefined,
+              page: currentPage + 1,
+            })}
           >
             Next
           </Link>
