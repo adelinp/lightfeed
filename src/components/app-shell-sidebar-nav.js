@@ -23,7 +23,10 @@ function normalizePathname(pathname) {
 
 function isFeedPageActive(pathname, pageId) {
   const pagePath = `/feeds/${pageId}`;
-  return pathname === pagePath || pathname === `${pagePath}/edit`;
+  return (
+  pathname === pagePath ||
+  pathname === `/settings/feeds/${pageId}/edit`
+);
 }
 
 function movePageToTarget(pages, sourceId, targetId) {
