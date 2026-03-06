@@ -193,7 +193,7 @@ export function AppShellSidebarNav({ pages }) {
 
       <div className="mt-5">
         <Link 
-          href="/feeds/new" 
+          href="/settings/feeds/new" 
           className="flex items-center gap-2 bg-stone-900 text-stone-50 h-[48px] w-full rounded-md justify-center no-underline font-bold hover:bg-stone-800 hover:shadow-xl hover:shadow-slate-500/50 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300 dark:hover:shadow-stone-900/30"
         >
           <LucideIcon icon={PlusCircle} />

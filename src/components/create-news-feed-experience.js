@@ -5,13 +5,21 @@ import { useRouter } from "next/navigation";
 import { Alert } from "@/components/alert";
 import { FeedRowsFields } from "@/components/feed-rows-fields";
 import { NewsCard } from "@/components/news-card";
-import {
-  createInitialFeedRows,
-  useEditableFeedRows,
-} from "@/components/use-editable-feed-rows";
+import { useEditableFeedRows } from "@/components/use-editable-feed-rows";
 import { Button } from "@/components/button";
 import LucideIcon from "@/components/lucide-icon";
 import { PlusCircle } from "lucide";
+
+const INITIAL_FEED_ROWS = [
+  {
+    id: "create-feed-row-1",
+    url: "",
+  },
+  {
+    id: "create-feed-row-2",
+    url: "",
+  },
+];
 
 export function CreateNewsFeedExperience() {
   const router = useRouter();
@@ -28,6 +36,7 @@ export function CreateNewsFeedExperience() {
     loading: false,
     error: "",
   });
+
   const {
     rows,
     addRow,
@@ -36,7 +45,7 @@ export function CreateNewsFeedExperience() {
     resolveFeeds,
   } = useEditableFeedRows({
     prefix: "create-feed-row",
-    initialRows: createInitialFeedRows("create-feed-row", 2),
+    initialRows: INITIAL_FEED_ROWS,
   });
 
   const handlePreview = async (event) => {
@@ -78,7 +87,8 @@ export function CreateNewsFeedExperience() {
       setPreviewState((current) => ({
         ...current,
         loading: false,
-        error: error instanceof Error ? error.message : "Unable to preview feed.",
+        error:
+          error instanceof Error ? error.message : "Unable to preview feed.",
       }));
     }
   };
@@ -147,7 +157,9 @@ export function CreateNewsFeedExperience() {
         <div className="sticky top-3 z-10 rounded-lg border border-stone-300 bg-stone-50/95 p-3 backdrop-blur dark:border-stone-700 dark:bg-stone-900/90">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">Create Feed</p>
+              <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                Create Feed
+              </p>
               <p className="text-xs text-stone-600 dark:text-stone-300">
                 Add sources, build preview, then save.
               </p>
@@ -196,7 +208,9 @@ export function CreateNewsFeedExperience() {
         <div className="border-t border-stone-200 pt-4 dark:border-stone-800">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">Feed Sources</p>
+              <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+                Feed Sources
+              </p>
               <p className="text-xs text-stone-600 dark:text-stone-300">
                 Add RSS sources. Articles are ordered by publish date (newest first).
               </p>
@@ -224,7 +238,9 @@ export function CreateNewsFeedExperience() {
 
         <div className="border border-stone-200 rounded-lg p-4 flex flex-row gap-2 items-center dark:border-stone-700 dark:bg-stone-900/60">
           <div className="flex-1">
-            <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">Homepage Feed</p>
+            <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+              Homepage Feed
+            </p>
             <p className="text-xs text-stone-600 dark:text-stone-300">
               Use this feed on the homepage.
             </p>
@@ -267,7 +283,9 @@ export function CreateNewsFeedExperience() {
 
         <div className="border-t border-stone-200 pt-4 dark:border-stone-800">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-100">Preview Articles</h2>
+            <h2 className="text-sm font-semibold text-stone-900 dark:text-stone-100">
+              Preview Articles
+            </h2>
             {previewState.fetchedAt ? (
               <p className="text-xs text-stone-600 dark:text-stone-300">
                 Fetched {new Date(previewState.fetchedAt).toLocaleString()}

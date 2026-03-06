@@ -186,7 +186,7 @@ async function HomeFeedSection({ activePage, pageNumber }) {
           {activePage ? (
             <Link
               className="flex items-center gap-2 font-bold text-xs hover:text-stone-700 dark:text-stone-300 dark:hover:text-stone-100"
-              href={`/feeds/${activePage.id}/edit`}
+              href={`/settings/feeds/${activePage.id}/edit`}
               aria-label={`${activePage.name} settings`}
               title="Feed settings"
             >

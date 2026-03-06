@@ -108,7 +108,7 @@ export function AppShellMobileNav({ pages }) {
 
           <div className="mt-3">
             <Link
-              href="/feeds/new"
+              href="/settings/feeds/new"
               className="flex h-[44px] items-center justify-center gap-2 rounded-md bg-stone-900 text-sm font-bold text-stone-50 no-underline transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300"
               onClick={() => setIsOpen(false)}
             >

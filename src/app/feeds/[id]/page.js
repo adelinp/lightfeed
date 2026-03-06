@@ -261,7 +261,7 @@ async function FeedDetailContent({ page, pageNumber, selectedSource }) {
 
             <Link
               className="flex items-center gap-2 font-bold text-xs hover:text-stone-700 dark:text-stone-300 dark:hover:text-stone-100"
-              href={`/feeds/${page.id}/edit`}
+              href={`/settings/feeds/${page.id}/edit`}
             >
               <LucideIcon icon={Settings} />
               Settings
