@@ -1,8 +1,8 @@
 # LightFeed
 
-LightFeed is a open source, self-hosted RSS reader focused on speed, low operational overhead, and user-controlled feed composition.
+LightFeed is an open-source, self-hosted RSS reader focused on **speed**, **low operational overhead**, and **user-controlled feed composition**.
 
-It lets you combine multiple RSS sources into custom feeds and keeps storage lightweight by saving configuration + bookmarks locally in SQLite.
+It lets you combine multiple RSS sources into custom feeds and keeps storage lightweight by saving **configuration in SQLite** while keeping **user bookmarks in the browser**.
 
 ![LightFeed Screenshot](./public/images/the-feed.png)
 
@@ -12,14 +12,18 @@ It lets you combine multiple RSS sources into custom feeds and keeps storage lig
 - Full control over feed sources
 - Local-first persistence with minimal moving parts
 - No tracking or telemetry
+- Very small operational footprint
 
 ## Features
 
 - Create multiple named feeds (example: `World News`, `Business`, `Sports`)
-- Blend RSS sources into one recency-sorted stream per feed
-- Mark one feed as your homepage/default stream
-- Save and remove bookmarked articles
+- Blend RSS sources into one **recency-sorted stream**
+- Mark one feed as the **homepage**
+- Save and remove bookmarked articles in the browser
+- Filter saved articles by **source**
 - Show per-feed fetch failures without hiding successful sources
+- Display publisher logos automatically
+- Support multiple feeds from the same publisher as distinct sources
 - Keep article fetching live (articles are not fully persisted)
 
 ## Tech stack
@@ -29,11 +33,13 @@ It lets you combine multiple RSS sources into custom feeds and keeps storage lig
 - SQLite via built-in `node:sqlite`
 - Tailwind CSS v4
 
-## Install (Beginner Friendly)
+## Install
 
-### 1. Install Node.js (required)
+### 1. Install Node.js
 
-Use **Node.js 22 or newer**. This project uses `node:sqlite`, which is only available in newer Node versions.
+Use **Node.js 22 or newer**.
+
+LightFeed uses `node:sqlite`, which is only available in newer Node versions.
 
 Check your version:
 
@@ -41,13 +47,13 @@ Check your version:
 node -v
 ```
 
-If you need Node, install from [nodejs.org](https://nodejs.org/) (LTS recommended).
+Install Node from [nodejs.org](https://nodejs.org/).
 
 ### 2. Clone the project
 
 ```bash
 git clone <your-repo-url>
-cd rss-news
+cd lightfeed
 ```
 
 ### 3. Install dependencies
@@ -56,27 +62,57 @@ cd rss-news
 npm install
 ```
 
-### 4. Logo.dev Token (Optional) Add `.env.local` or set it in your production environment
+### 4. Create `.env.local`
 
-LightFeed uses [logo.dev](https://logo.dev/) to fetch publisher logos for news sources in article cards.
-
-Add this token if you want more reliable logo rendering:
+Example:
 
 ```bash
-NEXT_PUBLIC_LOGO_DEV_TOKEN=your_token_here
+NEXT_PUBLIC_LOGO_DEV_TOKEN=your_logo_dev_token
+NEXT_PUBLIC_LOGO_DOMAIN_OVERRIDES=feeds.content.dowjones.io=wsj.com
+ADMIN_SECRET=your_random_admin_secret
 ```
 
-The app still works if you skip this.
+#### `NEXT_PUBLIC_LOGO_DEV_TOKEN`
 
-For most personal/open-source usage, logo.dev's free plan is usually more than enough.
+Optional token for [logo.dev](https://logo.dev/).
 
-### 5. Database path (Recommended)
+Used to fetch publisher logos.
 
-By default, LightFeed stores SQLite outside the repo at:
+Without it, logos may still work, but with lower reliability.
 
-`~/.lightfeed/data/lightfeed.sqlite`
+#### `NEXT_PUBLIC_LOGO_DOMAIN_OVERRIDES`
 
-You can override this:
+Optional mapping to override logo domains.
+
+Example:
+
+```bash
+feeds.content.dowjones.io=wsj.com
+```
+
+This fixes feeds where the RSS hostname does not match the publisher domain.
+
+Multiple overrides can be added:
+
+```bash
+feeds.content.dowjones.io=wsj.com,example.feed.com=example.com
+```
+
+#### `ADMIN_SECRET`
+
+Shared secret used by middleware to protect admin routes.
+
+This must match the header injected by Cloudflare.
+
+### 5. Database path
+
+By default SQLite is stored at:
+
+```bash
+~/.lightfeed/data/lightfeed.sqlite
+```
+
+You can override it with:
 
 ```bash
 LIGHTFEED_DB_PATH=/absolute/path/to/lightfeed.sqlite
@@ -88,120 +124,213 @@ or:
 LIGHTFEED_DATA_DIR=/absolute/path/to/lightfeed-data
 ```
 
-`LIGHTFEED_DB_PATH` can also point to an existing directory; in that case LightFeed uses
-`<that-directory>/lightfeed.sqlite`.
+Resolution order:
+
+1. `LIGHTFEED_DB_PATH`
+2. `LIGHTFEED_DATA_DIR/lightfeed.sqlite`
+3. `~/.lightfeed/data/lightfeed.sqlite`
 
 ### 6. Start the app
+
+Development:
 
 ```bash
 npm run dev
 ```
 
-Open: `http://localhost:3000`
+Open:
 
-### 7. What happens on first run
+```text
+http://localhost:3000
+```
 
-- The app creates `~/.lightfeed/data/lightfeed.sqlite` automatically (unless overridden).
-- If an old `db/lightfeed.sqlite` exists, LightFeed automatically copies it to the new path.
-- Schema and lightweight seed data are initialized automatically.
-- You can immediately browse/edit feeds from the UI.
+## First run behavior
+
+LightFeed automatically:
+
+- creates the SQLite database
+- initializes schema
+- creates lightweight seed data if required
+- starts fetching RSS feeds immediately
+
+No manual database setup is required.
 
 ## Environment variables
 
-This is the complete list of environment variables currently used by LightFeed.
+Complete list currently used by LightFeed.
 
-1. `NEXT_PUBLIC_LOGO_DEV_TOKEN` (optional)
-   Used by article cards to fetch publisher logos from logo.dev.
-2. `LIGHTFEED_DB_PATH` (optional)
-   Absolute or relative SQLite file path. If it points to an existing directory, LightFeed uses `<directory>/lightfeed.sqlite`.
-3. `LIGHTFEED_DATA_DIR` (optional)
-   Directory where LightFeed stores SQLite as `lightfeed.sqlite`. Used only when `LIGHTFEED_DB_PATH` is not set.
-
-Resolution order for database path:
-
-1. `LIGHTFEED_DB_PATH`
-2. `LIGHTFEED_DATA_DIR/lightfeed.sqlite`
-3. `~/.lightfeed/data/lightfeed.sqlite` (default)
-
-Example `.env.local`:
+### Public variables
 
 ```bash
-NEXT_PUBLIC_LOGO_DEV_TOKEN=your_token_here
-LIGHTFEED_DATA_DIR=/absolute/path/to/lightfeed-data
-# Or use LIGHTFEED_DB_PATH instead of LIGHTFEED_DATA_DIR:
-# LIGHTFEED_DB_PATH=/absolute/path/to/lightfeed.sqlite
+NEXT_PUBLIC_LOGO_DEV_TOKEN
+NEXT_PUBLIC_LOGO_DOMAIN_OVERRIDES
+```
+
+### Server variables
+
+```bash
+ADMIN_SECRET
+LIGHTFEED_DB_PATH
+LIGHTFEED_DATA_DIR
 ```
 
 ## Common commands
 
 ```bash
-npm run dev              # start local development server
-npm run build            # production build (webpack)
-npm run build:turbopack  # production build (turbopack)
-npm run start            # run production build
-npm run lint             # run eslint
+npm run dev
+npm run build
+npm run start
+npm run lint
 ```
 
-## Deployment guides
+## Deployment
 
-LightFeed currently stores feed configuration and bookmarks in local SQLite (`~/.lightfeed/data/lightfeed.sqlite` by default).
+LightFeed runs as a standard **Next.js Node server**.
 
-- Works out of the box on hosts with persistent disk (VMs/containers with volumes).
-- Does not work as-is on stateless serverless platforms unless you migrate from SQLite to Postgres.
+It works best on:
 
-### 1. Deploy with Docker (recommended for current codebase)
+- VPS
+- Docker
+- Fly.io
+- Railway
+- Render
+- traditional servers
 
-Use Docker when you want the app exactly as it is today, with persistent SQLite data.
+### Docker deployment
 
-1. Create a `Dockerfile` in the project root:
+Example `Dockerfile`:
 
 ```dockerfile
 FROM node:22-alpine
+
 WORKDIR /app
 
 COPY package*.json ./
 RUN npm ci
 
 COPY . .
+
 RUN npm run build
 
 EXPOSE 3000
+
 CMD ["npm", "run", "start"]
 ```
 
-2. Build the image:
+Build:
 
 ```bash
-docker build -t lightfeed:latest .
+docker build -t lightfeed .
 ```
 
-3. Run with a persistent volume mounted to `/app/data`:
+Run:
 
 ```bash
 docker run -d \
-  --name lightfeed \
   -p 3000:3000 \
   -v lightfeed_db:/app/data \
   -e LIGHTFEED_DATA_DIR=/app/data \
-  -e NEXT_PUBLIC_LOGO_DEV_TOKEN=your_token_here \
-  lightfeed:latest
+  -e ADMIN_SECRET=your_secret \
+  -e NEXT_PUBLIC_LOGO_DEV_TOKEN=your_token \
+  lightfeed
 ```
 
-4. Open `http://localhost:3000`.
+## Public site + protected admin
 
-Data survives container restarts because SQLite is stored in the `lightfeed_db` volume.
+LightFeed is designed to be **public-read / private-admin**.
 
-### 2. Other hosts (Railway, Fly.io, Render, VPS)
+Public users can browse feeds.  
+Admin users can create and edit feeds.
 
-Any host that can run a Next.js Node server works:
+### Public routes
 
-```bash
-npm install
-npm run build
-npm run start
+```text
+/
+/feeds
+/feeds/[id]
+/saved
 ```
 
-If you keep SQLite, make sure your DB path is on persistent storage.
+### Admin routes
+
+```text
+/settings
+/settings/feeds/new
+/settings/feeds/[id]/edit
+```
+
+## Middleware protection
+
+Admin routes are protected by middleware.
+
+Protected paths:
+
+```text
+/settings/*
+/api/feeds/*
+/api/preview-feed
+```
+
+Middleware checks the header:
+
+```text
+x-lightfeed-admin-secret
+```
+
+Its value must match:
+
+```text
+ADMIN_SECRET
+```
+
+If the header is missing or wrong, the app returns:
+
+```text
+403 Forbidden
+```
+
+## Cloudflare protection for `/settings`
+
+The simplest setup is:
+
+- keep the site public
+- protect `/settings` and admin APIs at Cloudflare
+- let Cloudflare inject the admin secret header
+
+### Recommended approach
+
+At Cloudflare, create a rule or Worker that injects:
+
+```text
+x-lightfeed-admin-secret: YOUR_ADMIN_SECRET
+```
+
+Apply it only to:
+
+```text
+/settings*
+/api/feeds*
+/api/preview-feed
+```
+
+### Result
+
+Public visitors can access:
+
+```text
+/
+/feeds
+/feeds/[id]
+/saved
+```
+
+Only requests that pass through your Cloudflare admin protection can access:
+
+```text
+/settings*
+/api/feeds*
+/api/preview-feed
+```
 
 ## Product model
 
@@ -216,13 +345,18 @@ A feed/page contains:
 
 ## App routes
 
+### Public
+
 - `/` - homepage/default feed stream
 - `/feeds` - feed directory
-- `/feeds/new` - create a feed
 - `/feeds/[id]` - read a feed stream
-- `/feeds/[id]/edit` - edit feed sources and settings
-- `/saved` - bookmarked articles
-- `/settings` - app settings (placeholder)
+- `/saved` - bookmarked articles stored in browser localStorage
+
+### Admin
+
+- `/settings`
+- `/settings/feeds/new`
+- `/settings/feeds/[id]/edit`
 
 ## API routes
 
@@ -232,22 +366,44 @@ A feed/page contains:
 - `PATCH /api/feeds/[feedId]` - update feed
 - `DELETE /api/feeds/[feedId]` - delete feed
 - `POST /api/preview-feed` - preview feed blend before saving
-- `GET /api/saved-articles` - list saved articles
-- `POST /api/saved-articles` - save article
-- `DELETE /api/saved-articles` - remove saved article
+
+### Protected API routes
+
+The following routes should not be publicly writable:
+
+- `POST /api/feeds`
+- `PATCH /api/feeds/[feedId]`
+- `DELETE /api/feeds/[feedId]`
+- `POST /api/preview-feed`
 
 ## Data storage
 
-SQLite file (default): `~/.lightfeed/data/lightfeed.sqlite`
+SQLite file (default):
+
+```text
+~/.lightfeed/data/lightfeed.sqlite
+```
 
 Primary tables:
 
 - `pages(id, name, is_homepage, sort_order, created_at)`
 - `feeds(id, url, title, created_at)`
 - `page_feeds(page_id, feed_id)`
-- `saved_articles(...)`
 
-The app stores configuration and saved metadata. RSS article content is fetched live.
+LightFeed stores **feed configuration** in SQLite.
+
+RSS article content is fetched live and is not fully persisted.
+
+### Bookmarks
+
+Saved articles are stored in the browser using `localStorage`.
+
+This means:
+
+- bookmarks are per browser/device
+- no login is required
+- no anonymous bookmark rows accumulate in the server database
+- clearing browser storage removes saved articles
 
 ## Project structure
 
@@ -259,7 +415,7 @@ The app stores configuration and saved metadata. RSS article content is fetched 
 - `src/lib/rss-blend.js` - recency-first blend logic
 - `src/lib/rss-stream.js` - fetch + orchestration
 - `src/lib/feed-request.js` - request feed validation
-- `src/lib/saved-articles-db.js` - bookmark persistence
+- `src/middleware.js` - admin route protection
 
 ## Lightweight-by-default principles
 
@@ -267,22 +423,40 @@ The app stores configuration and saved metadata. RSS article content is fetched 
 - Keep API semantics aligned with UI language (`feeds`)
 - Avoid duplicated request validation logic
 - Avoid storing full article payloads when not needed
+- Keep anonymous user state in the browser when possible
 
 ## Troubleshooting
 
 - `Cannot find module 'node:sqlite'` or similar:
   - upgrade Node.js to `22+`
+
 - App starts but no articles appear:
   - verify feed URLs are valid RSS/Atom endpoints
   - check per-feed warnings shown in the UI
+
 - Database reset for local development:
   - stop server
   - delete `~/.lightfeed/data/lightfeed.sqlite` (or your custom DB path)
   - restart with `npm run dev`
 
+- `403 Forbidden` on `/settings`:
+  - verify `ADMIN_SECRET` is set
+  - verify your middleware is enabled
+  - verify Cloudflare injects `x-lightfeed-admin-secret`
+  - for local development, allow localhost bypass or send the header manually
+
 ## Security note
 
-Feed URLs are user-provided and fetched server-side. If you deploy this publicly, add network controls/rules to prevent abuse (for example SSRF protections and outbound restrictions).
+Feed URLs are user-provided and fetched server-side.
+
+If you deploy this publicly, add network controls and outbound restrictions where possible to reduce SSRF and abuse risk.
+
+Also:
+
+- protect `/settings`
+- protect write APIs
+- do not rely only on hidden links
+- restrict admin access at Cloudflare or another reverse proxy layer
 
 ## Contributing
 
@@ -291,11 +465,11 @@ Contributions are welcome.
 Suggested workflow:
 
 1. Fork/branch from `main`
-2. Keep each update small and self-contained (one focused change per PR)
-3. Do not include scattered, unrelated edits across multiple random parts of the app
-4. Run `npm run lint` and make sure all lint checks pass
-5. Ensure accessibility checks pass at least AA with a minimum 3.5:1 visibility/contrast baseline for UI copy and text content
-6. Open a pull request with a clear description of what changed and why
+2. Keep each update small and self-contained
+3. Do not include scattered unrelated edits
+4. Run `npm run lint`
+5. Ensure accessibility remains strong
+6. Open a pull request with a clear explanation
 
 Accessibility reference:
 
@@ -304,9 +478,9 @@ Accessibility reference:
 
 Maintainer policy:
 
-- The project owner may decline, ignore, or remove updates to keep the app clean and aligned with its mission.
-- Changes that move the app away from its mission will not be accepted.
-- If you want to take the app in a different direction, feel free to fork this repository and use it as a starting point/boilerplate.
+- The project owner may decline, ignore, or remove updates to keep the app clean and aligned with its mission
+- Changes that move the app away from its mission may not be accepted
+- If you want a different direction, feel free to fork the project
 
 ## License
 
