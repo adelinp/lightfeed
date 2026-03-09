@@ -59,6 +59,10 @@ function toSafeHostname(rawValue) {
   }
 }
 
+function isGoogleNewsUrl(rawValue) {
+  return toSafeHostname(rawValue) === "news.google.com";
+}
+
 function getLogoDomainOverrides() {
   const raw = String(process.env.NEXT_PUBLIC_LOGO_DOMAIN_OVERRIDES ?? "").trim();
   const map = new Map();
@@ -261,6 +265,15 @@ export function NewsCard({
   const [isPending, setIsPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [isHidden, setIsHidden] = useState(false);
+
+  const isGoogleArticle = isGoogleNewsUrl(article.link);
+  const [resolvedArticleUrl, setResolvedArticleUrl] = useState(
+    isGoogleArticle ? null : article.link,
+  );
+  const [resolverStatus, setResolverStatus] = useState(
+    isGoogleArticle ? "Resolving article URL..." : "",
+  );
+
   const openWithArchive = useArchiveLinksPreference();
   const sourceDomain = toSafeHostname(article.sourceUrl) ?? toSafeHostname(article.link);
   const sourceLabel = article.sourceTitle || sourceDomain || "Unknown feed";
@@ -280,12 +293,21 @@ export function NewsCard({
   );
 
   const buttonLabel = getButtonLabel({ mode: actionMode, isSaved, isPending });
-  const archiveHref = useMemo(() => toArchiveIsUrl(article.link), [article.link]);
-  const paywallSkipHref = useMemo(() => toPaywallSkipUrl(article.link), [article.link]);
 
+  const canShowResolvedActions = Boolean(resolvedArticleUrl);
+  const readArticleUrl = resolvedArticleUrl;
+  const archiveHref = useMemo(
+    () => (readArticleUrl ? toArchiveIsUrl(readArticleUrl) : null),
+    [readArticleUrl],
+  );
+  const paywallSkipHref = useMemo(
+    () => (readArticleUrl ? toPaywallSkipUrl(readArticleUrl) : null),
+    [readArticleUrl],
+  );
   const articleHref = useMemo(() => {
-    return openWithArchive ? archiveHref : article.link;
-  }, [openWithArchive, archiveHref, article.link]);
+    if (!readArticleUrl) return null;
+    return openWithArchive ? archiveHref : readArticleUrl;
+  }, [openWithArchive, archiveHref, readArticleUrl]);
 
   const imageLinkLabel = article.title ? `Open article: ${article.title}` : "Open article";
 
@@ -318,6 +340,59 @@ export function NewsCard({
       );
     };
   }, [article.link]);
+
+  useEffect(() => {
+    if (!isGoogleArticle) {
+      setResolvedArticleUrl(article.link);
+      setResolverStatus("");
+      return;
+    }
+
+    let cancelled = false;
+
+    async function resolveUrl() {
+      try {
+        setResolverStatus("Resolving article URL...");
+
+        const response = await fetch("/api/resolve-article-url", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            url: article.link,
+          }),
+        });
+
+        const payload = await response.json();
+
+        if (cancelled) {
+          return;
+        }
+
+        const nextResolvedUrl = String(payload?.data?.resolvedUrl ?? "").trim();
+
+        if (response.ok && nextResolvedUrl) {
+          setResolvedArticleUrl(nextResolvedUrl);
+          setResolverStatus("");
+        } else {
+          setResolvedArticleUrl(null);
+          setResolverStatus("Real article URL could not be resolved.");
+        }
+      } catch {
+        if (!cancelled) {
+          setResolvedArticleUrl(null);
+          setResolverStatus("Real article URL could not be resolved.");
+        }
+      }
+    }
+
+    resolveUrl();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [article.link, isGoogleArticle]);
 
   if (isHidden) {
     return null;
@@ -399,14 +474,20 @@ export function NewsCard({
 
         <div className="flex flex-col gap-4 lg:flex-row">
           <div className="flex min-w-0 flex-1 flex-col">
-            <Link
-              href={articleHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-serif text-2xl font-semibold leading-tight text-stone-950 hover:text-stone-700 hover:underline dark:text-stone-100 dark:hover:text-stone-300"
-            >
-              {article.title}
-            </Link>
+            {articleHref ? (
+              <Link
+                href={articleHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-serif text-2xl font-semibold leading-tight text-stone-950 hover:text-stone-700 hover:underline dark:text-stone-100 dark:hover:text-stone-300"
+              >
+                {article.title}
+              </Link>
+            ) : (
+              <h2 className="font-serif text-2xl font-semibold leading-tight text-stone-950 dark:text-stone-100">
+                {article.title}
+              </h2>
+            )}
 
             {article.summary ? (
               <p className="mt-2 font-serif text-base leading-[150%] text-stone-700 dark:text-stone-300">
@@ -427,7 +508,7 @@ export function NewsCard({
                   <source src={safePreviewMediaUrl} />
                 </video>
               </div>
-            ) : (
+            ) : articleHref ? (
               <Link
                 href={articleHref}
                 target="_blank"
@@ -444,6 +525,17 @@ export function NewsCard({
                   onError={() => setIsPreviewMediaVisible(false)}
                 />
               </Link>
+            ) : (
+              <div className="block aspect-[16/10] w-full overflow-hidden rounded-md lg:max-w-[240px]">
+                <img
+                  src={safePreviewMediaUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="h-full w-full object-cover saturate-75"
+                  onError={() => setIsPreviewMediaVisible(false)}
+                />
+              </div>
             )
           ) : null}
         </div>
@@ -452,42 +544,46 @@ export function NewsCard({
           <p className="text-xs text-stone-600 dark:text-stone-300">
             {actionMode === "remove-only"
               ? "Saved article"
-              : "Open the article or bookmark it for later."}
+              : resolverStatus || "Open the article or bookmark it for later."}
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Button
-              href={article.link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-8 px-3 text-xs"
-              variant={openWithArchive ? "secondary" : "primary"}
-            >
-              <LucideIcon icon={ExternalLink} />
-              Read Article
-            </Button>
+            {canShowResolvedActions ? (
+              <>
+                <Button
+                  href={readArticleUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-8 px-3 text-xs"
+                  variant={openWithArchive ? "secondary" : "primary"}
+                >
+                  <LucideIcon icon={ExternalLink} />
+                  Read Article
+                </Button>
 
-            <Button
-              href={archiveHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-8 px-3 text-xs"
-              variant={openWithArchive ? "primary" : "secondary"}
-            >
-              <LucideIcon icon={ExternalLink} />
-              Read via archive.is
-            </Button>
+                <Button
+                  href={archiveHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-8 px-3 text-xs"
+                  variant={openWithArchive ? "primary" : "secondary"}
+                >
+                  <LucideIcon icon={ExternalLink} />
+                  Read via archive.is
+                </Button>
 
-            <Button
-              href={paywallSkipHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="h-8 px-3 text-xs"
-              variant="secondary"
-            >
-              <LucideIcon icon={ExternalLink} />
-              Read via PaywallSkip
-            </Button>
+                <Button
+                  href={paywallSkipHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="h-8 px-3 text-xs"
+                  variant="secondary"
+                >
+                  <LucideIcon icon={ExternalLink} />
+                  Read via PaywallSkip
+                </Button>
+              </>
+            ) : null}
 
             <Button
               onClick={handleSaveToggle}
