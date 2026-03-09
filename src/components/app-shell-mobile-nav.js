@@ -13,6 +13,7 @@ import {
   Newspaper,
   Settings,
   X,
+  RotateCcw,
 } from "lucide";
 
 const PAGE_ORDER_COOKIE = "lightfeed_page_order";
@@ -43,6 +44,14 @@ function readCookie(name) {
     .find((row) => row.startsWith(`${name}=`));
 
   return match ? decodeURIComponent(match.split("=")[1]) : null;
+}
+
+function deleteCookie(name) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.cookie = `${name}=; Path=/; Max-Age=0; SameSite=Lax`;
 }
 
 function normalizePages(pages) {
@@ -136,6 +145,11 @@ export function AppShellMobileNav({ pages }) {
     setOrderedPages(applySavedOrder(defaultPages, savedOrderIds));
   }, [defaultPages]);
 
+  const resetFeedOrder = () => {
+    deleteCookie(PAGE_ORDER_COOKIE);
+    setOrderedPages(defaultPages);
+  };
+
   return (
     <div className="lg:hidden">
       <div className="flex items-center justify-between gap-3 rounded-xl border border-stone-900/8 bg-white/70 p-3 dark:border-stone-100/15 dark:bg-stone-900/70">
@@ -195,9 +209,22 @@ export function AppShellMobileNav({ pages }) {
           </nav>
 
           <div className="mt-4">
-            <span className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 dark:text-stone-300">
-              Feeds
-            </span>
+            <div className="flex items-center justify-between px-3">
+              <span className="text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 dark:text-stone-300">
+                Feeds
+              </span>
+
+              <button
+                type="button"
+                onClick={resetFeedOrder}
+                title="Reset order"
+                aria-label="Reset order"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-stone-500 transition hover:bg-stone-200 hover:text-stone-900 dark:text-stone-400 dark:hover:bg-stone-800 dark:hover:text-stone-100"
+              >
+                <LucideIcon icon={RotateCcw} size={14} />
+              </button>
+            </div>
+
             <div className="mt-2 space-y-1">
               {orderedPages.map((page) => (
                 <MobileMenuLink
