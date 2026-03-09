@@ -186,6 +186,15 @@ function toArchiveIsUrl(rawValue) {
   return `https://archive.is/newest/${encodeURIComponent(safeUrl)}`;
 }
 
+function toArchivePhUrl(rawValue) {
+  const safeUrl = toSafeHttpUrl(rawValue);
+  if (!safeUrl) {
+    return rawValue;
+  }
+
+  return `https://archive.ph/newest/${encodeURIComponent(safeUrl)}`;
+}
+
 function normalizeArticleForSave(article, pageContext = null) {
   return {
     id: article?.id ?? article?.link,
@@ -272,6 +281,7 @@ export function NewsCard({
 
   const buttonLabel = getButtonLabel({ mode: actionMode, isSaved, isPending });
   const archiveHref = useMemo(() => toArchiveIsUrl(article.link), [article.link]);
+  const archivePhHref = useMemo(() => toArchivePhUrl(article.link), [article.link]);
 
   const articleHref = useMemo(() => {
     return openWithArchive ? archiveHref : article.link;
@@ -466,6 +476,17 @@ export function NewsCard({
             >
               <LucideIcon icon={ExternalLink} />
               Read via archive.is
+            </Button>
+
+            <Button
+              href={archivePhHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="h-8 px-3 text-xs"
+              variant="secondary"
+            >
+              <LucideIcon icon={ExternalLink} />
+              Read via archive.ph
             </Button>
 
             <Button
