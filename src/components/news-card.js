@@ -262,7 +262,7 @@ export function NewsCard({
   const [errorMessage, setErrorMessage] = useState("");
   const [isHidden, setIsHidden] = useState(false);
   const openWithArchive = useArchiveLinksPreference();
-  const sourceDomain = toSafeHostname(article.link) ?? toSafeHostname(article.sourceUrl);
+  const sourceDomain = toSafeHostname(article.sourceUrl) ?? toSafeHostname(article.link);
   const sourceLabel = article.sourceTitle || sourceDomain || "Unknown feed";
   const redditSubredditLabel = toRedditSubredditLabel({
     sourceUrl: article.sourceUrl,
