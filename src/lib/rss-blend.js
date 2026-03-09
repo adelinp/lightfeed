@@ -29,8 +29,8 @@ export function blendItemsByRecency(feedResults, targetCount) {
     result.items.map((item) => ({
       ...item,
       sourceFeedId: result.feedId,
-      sourceTitle: result.feedTitle,
-      sourceUrl: result.feedUrl,
+      sourceTitle: item.sourceTitle || result.feedTitle,
+      sourceUrl: item.sourceUrl || result.feedUrl,
       sourceImage: result.feedImage,
     })),
   );

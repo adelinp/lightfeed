@@ -182,7 +182,6 @@ function extractRssFeedImage(xml, feedUrl) {
 
   const channel = channelMatch[0];
 
-  // Try <image> tag (standard RSS)
   const imageMatch = channel.match(/<image\b[\s\S]*?<\/image>/i);
   if (imageMatch) {
     const urlMatch = imageMatch[0].match(/<url(?:\s[^>]*)?>([\s\S]*?)<\/url>/i);
@@ -191,7 +190,6 @@ function extractRssFeedImage(xml, feedUrl) {
     }
   }
 
-  // Try <itunes:image> or <googleplay:image>
   const itunesImage = firstMatchValue(channel, [
     /<itunes:image\s+[^>]*href=["']([^"']+)["'][^>]*>/i,
     /<googleplay:image\s+[^>]*href=["']([^"']+)["'][^>]*>/i,
@@ -200,7 +198,6 @@ function extractRssFeedImage(xml, feedUrl) {
     return resolveUrl(itunesImage, feedUrl);
   }
 
-  // Try <media:thumbnail> on channel
   const mediaThumbnail = firstMatchValue(channel, [
     /<media:thumbnail\s+[^>]*url=["']([^"']+)["'][^>]*>/i,
   ]);
@@ -208,7 +205,6 @@ function extractRssFeedImage(xml, feedUrl) {
     return resolveUrl(mediaThumbnail, feedUrl);
   }
 
-  // Try <logo> tag
   const logoMatch = channel.match(/<logo(?:\s[^>]*)?>([\s\S]*?)<\/logo>/i);
   if (logoMatch?.[1]) {
     return resolveUrl(toPlainText(logoMatch[1]), feedUrl);
@@ -223,7 +219,6 @@ function extractAtomFeedImage(xml, feedUrl) {
 
   const feed = feedMatch[0];
 
-  // Try <icon> tag (Atom standard - usually small icon)
   const iconMatch = feed.match(/<icon(?:\s[^>]*)?>([\s\S]*?)<\/icon>/i);
   if (iconMatch?.[1]) {
     const iconUrl = toPlainText(iconMatch[1]);
@@ -232,7 +227,6 @@ function extractAtomFeedImage(xml, feedUrl) {
     }
   }
 
-  // Try <logo> tag (Atom standard - usually larger logo)
   const logoMatch = feed.match(/<logo(?:\s[^>]*)?>([\s\S]*?)<\/logo>/i);
   if (logoMatch?.[1]) {
     const logoUrl = toPlainText(logoMatch[1]);
@@ -251,6 +245,23 @@ function extractRssFeedTitle(xml) {
   return toPlainText(
     firstMatchValue(channelMatch[0], [/<title(?:\s[^>]*)?>([\s\S]*?)<\/title>/i]),
   );
+}
+
+function extractRssItemSource(itemBlock, fallbackUrl) {
+  const sourceTag = itemBlock.match(/<source\b([^>]*)>([\s\S]*?)<\/source>/i);
+  if (!sourceTag) {
+    return { sourceTitle: "", sourceUrl: null };
+  }
+
+  const attrs = sourceTag[1] ?? "";
+  const sourceTitle = toPlainText(sourceTag[2] ?? "");
+  const urlMatch = attrs.match(/\burl=["']([^"']+)["']/i);
+  const sourceUrl = urlMatch?.[1] ? resolveUrl(decodeXmlEntities(urlMatch[1]), fallbackUrl, null) : null;
+
+  return {
+    sourceTitle,
+    sourceUrl,
+  };
 }
 
 function parseRssItem(itemBlock, feedConfig, index) {
@@ -302,6 +313,8 @@ function parseRssItem(itemBlock, feedConfig, index) {
     ]),
   );
 
+  const { sourceTitle, sourceUrl } = extractRssItemSource(itemBlock, feedConfig.url);
+
   return {
     id: `${feedConfig.feedId}-${idSeed || index}`,
     title: title || "Untitled article",
@@ -311,6 +324,8 @@ function parseRssItem(itemBlock, feedConfig, index) {
     publishedAt,
     publishedAtMs,
     publishedLabel: formatPublishedLabel(publishedAtMs),
+    sourceTitle,
+    sourceUrl,
   };
 }
 
@@ -340,6 +355,24 @@ function extractAtomLink(entryBlock, fallbackUrl) {
   );
 
   return resolveArticleUrl(entryId, fallbackUrl);
+}
+
+function extractAtomEntrySource(entryBlock, fallbackUrl) {
+  const sourceBlock = entryBlock.match(/<source\b[\s\S]*?<\/source>/i);
+  if (!sourceBlock?.[0]) {
+    return { sourceTitle: "", sourceUrl: null };
+  }
+
+  const sourceTitle = toPlainText(
+    firstMatchValue(sourceBlock[0], [/<title(?:\s[^>]*)?>([\s\S]*?)<\/title>/i]),
+  );
+
+  const sourceUrl = extractAtomLink(sourceBlock[0], fallbackUrl);
+
+  return {
+    sourceTitle,
+    sourceUrl,
+  };
 }
 
 function parseAtomEntry(entryBlock, feedConfig, index) {
@@ -378,6 +411,8 @@ function parseAtomEntry(entryBlock, feedConfig, index) {
     ]),
   );
 
+  const { sourceTitle, sourceUrl } = extractAtomEntrySource(entryBlock, feedConfig.url);
+
   return {
     id: `${feedConfig.feedId}-${idSeed || index}`,
     title: title || "Untitled article",
@@ -387,6 +422,8 @@ function parseAtomEntry(entryBlock, feedConfig, index) {
     publishedAt,
     publishedAtMs,
     publishedLabel: formatPublishedLabel(publishedAtMs),
+    sourceTitle,
+    sourceUrl,
   };
 }
 
