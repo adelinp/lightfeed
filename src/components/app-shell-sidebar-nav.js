@@ -2,17 +2,19 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ThemeQuickToggle } from "@/components/theme-quick-toggle";
 import LucideIcon from "@/components/lucide-icon";
 import {
   Home,
   Newspaper,
-  PlusCircle,
   Bookmark,
   Settings,
   GripVertical,
 } from "lucide";
+
+const PAGE_ORDER_COOKIE = "lightfeed_page_order";
+const COOKIE_MAX_AGE = 31536000; // 1 year
 
 function normalizePathname(pathname) {
   const safePathname = String(pathname ?? "").trim() || "/";
@@ -25,9 +27,9 @@ function normalizePathname(pathname) {
 function isFeedPageActive(pathname, pageId) {
   const pagePath = `/feeds/${pageId}`;
   return (
-  pathname === pagePath ||
-  pathname === `/settings/feeds/${pageId}/edit`
-);
+    pathname === pagePath ||
+    pathname === `/settings/feeds/${pageId}/edit`
+  );
 }
 
 function movePageToTarget(pages, sourceId, targetId) {
@@ -45,8 +47,92 @@ function movePageToTarget(pages, sourceId, targetId) {
   return nextPages;
 }
 
+function readCookie(name) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${name}=`));
+
+  return match ? decodeURIComponent(match.split("=")[1]) : null;
+}
+
+function writeCookie(name, value) {
+  if (typeof document === "undefined") {
+    return;
+  }
+
+  document.cookie = `${name}=${encodeURIComponent(
+    value,
+  )}; Path=/; Max-Age=${COOKIE_MAX_AGE}; SameSite=Lax`;
+}
+
+function normalizePages(pages) {
+  if (!Array.isArray(pages)) {
+    return [];
+  }
+
+  return pages.filter(
+    (page) => page && typeof page.id === "string" && typeof page.name === "string",
+  );
+}
+
+function readSavedOrderIds() {
+  try {
+    const raw = readCookie(PAGE_ORDER_COOKIE);
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+  } catch (_error) {
+    return [];
+  }
+}
+
+function applySavedOrder(pages, savedOrderIds) {
+  if (!savedOrderIds.length) {
+    return pages;
+  }
+
+  const pageMap = new Map(pages.map((page) => [page.id, page]));
+  const seen = new Set();
+  const ordered = [];
+
+  for (const id of savedOrderIds) {
+    const page = pageMap.get(id);
+
+    if (!page || seen.has(id)) {
+      continue;
+    }
+
+    ordered.push(page);
+    seen.add(id);
+  }
+
+  for (const page of pages) {
+    if (!seen.has(page.id)) {
+      ordered.push(page);
+    }
+  }
+
+  return ordered;
+}
+
 function MenuLink({ href, children, isActive }) {
-  const baseClass = "flex items-center gap-2 block rounded-md px-3 py-2 text-sm font-medium text-stone-700 no-underline transition hover:bg-stone-200 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100";
+  const baseClass =
+    "flex items-center gap-2 block rounded-md px-3 py-2 text-sm font-medium text-stone-700 no-underline transition hover:bg-stone-200 hover:text-stone-900 dark:text-stone-300 dark:hover:bg-stone-800 dark:hover:text-stone-100";
   const activeClass = "bg-stone-200 dark:bg-stone-800";
   const className = isActive ? `${baseClass} ${activeClass}` : baseClass;
 
@@ -64,60 +150,28 @@ function MenuLink({ href, children, isActive }) {
 
 export function AppShellSidebarNav({ pages }) {
   const pathname = normalizePathname(usePathname());
-  const [orderedPages, setOrderedPages] = useState(() => pages ?? []);
-  const [reorderState, setReorderState] = useState({
-    saving: false,
-    error: "",
-  });
+  const defaultPages = useMemo(() => normalizePages(pages), [pages]);
+  const [orderedPages, setOrderedPages] = useState(defaultPages);
   const [dragState, setDragState] = useState({
     sourceId: "",
     targetId: "",
   });
 
   useEffect(() => {
-    setOrderedPages(pages ?? []);
-  }, [pages]);
+    const savedOrderIds = readSavedOrderIds();
+    setOrderedPages(applySavedOrder(defaultPages, savedOrderIds));
+  }, [defaultPages]);
 
-  const persistPageOrder = async (nextPages, previousPages) => {
+  const persistPageOrder = (nextPages) => {
     setOrderedPages(nextPages);
-    setReorderState({
-      saving: true,
-      error: "",
-    });
-
-    try {
-      const response = await fetch("/api/feeds", {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          pageIds: nextPages.map((page) => page.id),
-        }),
-      });
-
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload?.error || "Unable to save feed order.");
-      }
-
-      setOrderedPages(Array.isArray(payload?.data) ? payload.data : nextPages);
-      setReorderState({
-        saving: false,
-        error: "",
-      });
-    } catch (error) {
-      setOrderedPages(previousPages);
-      setReorderState({
-        saving: false,
-        error: error instanceof Error ? error.message : "Unable to save feed order.",
-      });
-    }
+    writeCookie(
+      PAGE_ORDER_COOKIE,
+      JSON.stringify(nextPages.map((page) => page.id)),
+    );
   };
 
   const handleDragStart = (event, pageId) => {
-    if (reorderState.saving || orderedPages.length < 2) {
+    if (orderedPages.length < 2) {
       event.preventDefault();
       return;
     }
@@ -132,7 +186,7 @@ export function AppShellSidebarNav({ pages }) {
   };
 
   const handleDragOver = (event, pageId) => {
-    if (!dragState.sourceId || reorderState.saving) {
+    if (!dragState.sourceId) {
       return;
     }
 
@@ -147,7 +201,7 @@ export function AppShellSidebarNav({ pages }) {
     }
   };
 
-  const handleDrop = async (event, targetId) => {
+  const handleDrop = (event, targetId) => {
     event.preventDefault();
 
     const sourceId = dragState.sourceId;
@@ -157,18 +211,17 @@ export function AppShellSidebarNav({ pages }) {
       targetId: "",
     });
 
-    if (!sourceId || sourceId === targetId || reorderState.saving) {
+    if (!sourceId || sourceId === targetId) {
       return;
     }
 
-    const previousPages = orderedPages;
-    const nextPages = movePageToTarget(previousPages, sourceId, targetId);
+    const nextPages = movePageToTarget(orderedPages, sourceId, targetId);
 
-    if (nextPages === previousPages) {
+    if (nextPages === orderedPages) {
       return;
     }
 
-    await persistPageOrder(nextPages, previousPages);
+    persistPageOrder(nextPages);
   };
 
   const handleDragEnd = () => {
@@ -189,7 +242,10 @@ export function AppShellSidebarNav({ pages }) {
           <LucideIcon icon={Bookmark} />
           Saved For Later
         </MenuLink>
-        <MenuLink href="/settings" isActive={pathname === "/settings"}>
+        <MenuLink
+          href="/settings"
+          isActive={pathname === "/settings" || pathname.startsWith("/settings/")}
+        >
           <LucideIcon icon={Settings} />
           Settings
         </MenuLink>
@@ -203,12 +259,10 @@ export function AppShellSidebarNav({ pages }) {
           {orderedPages.map((page) => (
             <div
               key={page.id}
-              draggable={orderedPages.length > 1 && !reorderState.saving}
+              draggable={orderedPages.length > 1}
               onDragStart={(event) => handleDragStart(event, page.id)}
               onDragOver={(event) => handleDragOver(event, page.id)}
-              onDrop={(event) => {
-                void handleDrop(event, page.id);
-              }}
+              onDrop={(event) => handleDrop(event, page.id)}
               onDragEnd={handleDragEnd}
               className={[
                 "rounded-md transition group",
@@ -237,17 +291,8 @@ export function AppShellSidebarNav({ pages }) {
             </div>
           ))}
         </div>
-        {reorderState.error ? (
-          <p className="mt-2 px-3 text-xs text-rose-700 dark:text-rose-300">
-            {reorderState.error}
-          </p>
-        ) : null}
-        {reorderState.saving ? (
-          <p className="mt-2 px-3 text-xs text-stone-600 dark:text-stone-400">
-            Saving order...
-          </p>
-        ) : null}
       </div>
+
       <div className="mt-6 flex items-center justify-start">
         <ThemeQuickToggle />
       </div>

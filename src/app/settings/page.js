@@ -1,6 +1,8 @@
 import { AppShell } from "@/components/app-shell";
 import { ArchiveLinkSettingsControl } from "@/components/archive-link-settings-control";
+import { FeedOrderSettingsControl } from "@/components/feed-order-settings-control";
 import { ThemeSettingsControl } from "@/components/theme-settings-control";
+import { listPages } from "@/lib/lightfeed-data";
 import Link from "next/link";
 import { PlusCircle } from "lucide";
 import LucideIcon from "@/components/lucide-icon";
@@ -11,6 +13,8 @@ export const metadata = {
 };
 
 export default function SettingsPage() {
+  const pages = listPages();
+
   return (
     <AppShell>
       <section className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -38,6 +42,10 @@ export default function SettingsPage() {
 
       <section className="mb-6">
         <ArchiveLinkSettingsControl />
+      </section>
+
+      <section className="mb-6">
+        <FeedOrderSettingsControl pages={pages} />
       </section>
     </AppShell>
   );

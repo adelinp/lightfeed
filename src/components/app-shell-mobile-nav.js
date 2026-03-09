@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ThemeQuickToggle } from "@/components/theme-quick-toggle";
 import Logo from "@/app/assets/logo";
 import LucideIcon from "@/components/lucide-icon";
@@ -11,10 +11,11 @@ import {
   Home,
   Menu,
   Newspaper,
-  PlusCircle,
   Settings,
   X,
 } from "lucide";
+
+const PAGE_ORDER_COOKIE = "lightfeed_page_order";
 
 function normalizePathname(pathname) {
   const safePathname = String(pathname ?? "").trim() || "/";
@@ -27,9 +28,82 @@ function normalizePathname(pathname) {
 function isFeedPageActive(pathname, pageId) {
   const pagePath = `/feeds/${pageId}`;
   return (
-  pathname === pagePath ||
-  pathname === `/settings/feeds/${pageId}/edit`
-);
+    pathname === pagePath ||
+    pathname === `/settings/feeds/${pageId}/edit`
+  );
+}
+
+function readCookie(name) {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const match = document.cookie
+    .split("; ")
+    .find((row) => row.startsWith(`${name}=`));
+
+  return match ? decodeURIComponent(match.split("=")[1]) : null;
+}
+
+function normalizePages(pages) {
+  if (!Array.isArray(pages)) {
+    return [];
+  }
+
+  return pages.filter(
+    (page) => page && typeof page.id === "string" && typeof page.name === "string",
+  );
+}
+
+function readSavedOrderIds() {
+  try {
+    const raw = readCookie(PAGE_ORDER_COOKIE);
+
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter(
+      (value) => typeof value === "string" && value.trim().length > 0,
+    );
+  } catch (_error) {
+    return [];
+  }
+}
+
+function applySavedOrder(pages, savedOrderIds) {
+  if (!savedOrderIds.length) {
+    return pages;
+  }
+
+  const pageMap = new Map(pages.map((page) => [page.id, page]));
+  const seen = new Set();
+  const ordered = [];
+
+  for (const id of savedOrderIds) {
+    const page = pageMap.get(id);
+
+    if (!page || seen.has(id)) {
+      continue;
+    }
+
+    ordered.push(page);
+    seen.add(id);
+  }
+
+  for (const page of pages) {
+    if (!seen.has(page.id)) {
+      ordered.push(page);
+    }
+  }
+
+  return ordered;
 }
 
 function MobileMenuLink({ href, children, isActive, onNavigate }) {
@@ -54,6 +128,13 @@ function MobileMenuLink({ href, children, isActive, onNavigate }) {
 export function AppShellMobileNav({ pages }) {
   const pathname = normalizePathname(usePathname());
   const [isOpen, setIsOpen] = useState(false);
+  const defaultPages = useMemo(() => normalizePages(pages), [pages]);
+  const [orderedPages, setOrderedPages] = useState(defaultPages);
+
+  useEffect(() => {
+    const savedOrderIds = readSavedOrderIds();
+    setOrderedPages(applySavedOrder(defaultPages, savedOrderIds));
+  }, [defaultPages]);
 
   return (
     <div className="lg:hidden">
@@ -105,19 +186,20 @@ export function AppShellMobileNav({ pages }) {
             </MobileMenuLink>
             <MobileMenuLink
               href="/settings"
-              isActive={pathname === "/settings"}
+              isActive={pathname === "/settings" || pathname.startsWith("/settings/")}
               onNavigate={() => setIsOpen(false)}
             >
               <LucideIcon icon={Settings} />
               Settings
             </MobileMenuLink>
           </nav>
+
           <div className="mt-4">
             <span className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 dark:text-stone-300">
               Feeds
             </span>
             <div className="mt-2 space-y-1">
-              {(pages ?? []).map((page) => (
+              {orderedPages.map((page) => (
                 <MobileMenuLink
                   key={page.id}
                   href={`/feeds/${page.id}`}
