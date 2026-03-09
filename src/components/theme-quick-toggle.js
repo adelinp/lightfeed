@@ -5,9 +5,9 @@ import LucideIcon from "@/components/lucide-icon";
 import { useTheme } from "@/components/theme-provider";
 
 export function ThemeQuickToggle({ className = "" }) {
-  const { theme, setTheme } = useTheme();
+  const { resolvedTheme, setTheme } = useTheme();
 
-  const isDark = theme === "dark";
+  const isDark = resolvedTheme === "dark";
 
   return (
     <button

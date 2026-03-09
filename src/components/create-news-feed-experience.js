@@ -138,8 +138,11 @@ export function CreateNewsFeedExperience() {
         loading: false,
         error: "",
       });
-      router.push(`/feeds/${createdPageId}`);
+
+      const destination = `/feeds/${createdPageId}`;
+
       router.refresh();
+      window.location.assign(destination);
     } catch (error) {
       setSaveState({
         loading: false,
