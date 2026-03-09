@@ -1,8 +1,12 @@
+import { getSiteConfig } from "@/lib/site-config";
+
 export default function manifest() {
+  const site = getSiteConfig();
+
   return {
-    name: "LightFeed",
-    short_name: "LightFeed",
-    description: "Privacy-first, self-hosted RSS news aggregation.",
+    name: site.name,
+    short_name: site.name,
+    description: site.description,
     start_url: "/",
     scope: "/",
     display: "standalone",

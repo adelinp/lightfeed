@@ -12,11 +12,14 @@ import { NewsFeedList } from "@/components/news-feed-list";
 import { getHomepagePage } from "@/lib/lightfeed-data";
 import { getPageFeedStream } from "@/lib/rss-stream";
 import { listSavedArticleLinksByLinks } from "@/lib/saved-articles-db";
-
+import { getSiteConfig } from "@/lib/site-config";
 export const dynamic = "force-dynamic";
+
+const site = getSiteConfig();
+
 export const metadata = {
-  title: "Home",
-  description: "Your latest headlines from configured RSS feeds.",
+  title: site.title,
+  description: site.description,
 };
 
 const COOKIE_NAME = "lightfeed_items_per_feed";

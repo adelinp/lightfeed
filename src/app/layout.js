@@ -1,5 +1,6 @@
 import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
+import { getSiteConfig } from "@/lib/site-config";
 
 const themeInitScript = `
   (() => {
@@ -11,7 +12,6 @@ const themeInitScript = `
       if (value === "light" || value === "dark" || value === "system") {
         return value;
       }
-
       return "system";
     };
 
@@ -23,7 +23,6 @@ const themeInitScript = `
           return "light";
         }
       }
-
       return themeMode;
     };
 
@@ -41,30 +40,44 @@ const themeInitScript = `
   })();
 `;
 
+const site = getSiteConfig();
+
 export const metadata = {
-  applicationName: "LightFeed",
+  metadataBase: new URL(site.url),
+  applicationName: site.name,
   title: {
-    default: "LightFeed",
-    template: "%s | LightFeed",
+    default: site.title,
+    template: `%s | ${site.name}`,
   },
-  description: "Privacy-first, self-hosted RSS news aggregation.",
-  robots: {
-    index: false,
-    follow: false,
-    nocache: true,
-    googleBot: {
-      index: false,
-      follow: false,
-      noimageindex: true,
-      "max-video-preview": 0,
-      "max-image-preview": "none",
-      "max-snippet": 0,
-    },
+  description: site.description,
+  alternates: {
+    canonical: "/",
+  },
+  openGraph: {
+    type: "website",
+    url: site.url,
+    siteName: site.name,
+    title: site.title,
+    description: site.description,
+    locale: site.locale,
+    images: [
+      {
+        url: site.ogImage,
+        alt: site.title,
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: site.title,
+    description: site.description,
+    images: [site.ogImage],
   },
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
+      { url: "/icons/icon-192.png", type: "image/png", sizes: "192x192" },
       { url: "/icons/icon-512.png", type: "image/png", sizes: "512x512" },
     ],
     apple: [
@@ -74,7 +87,7 @@ export const metadata = {
   },
   appleWebApp: {
     capable: true,
-    title: "LightFeed",
+    title: site.name,
     statusBarStyle: "default",
   },
 };
