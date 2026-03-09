@@ -40,6 +40,12 @@ export function AppShell({ children }) {
               <small className="text-[10px] text-stone-500 font-mono dark:text-stone-300">
                 v{version}
               </small>
+              <small className="pt-1 text-xs text-stone-600 dark:text-stone-400">
+                i2b.ro customization
+              </small>
+              <small className="text-[10px] font-mono text-stone-500 dark:text-stone-300">
+                v0.1
+              </small>
             </div>
           </aside>
 

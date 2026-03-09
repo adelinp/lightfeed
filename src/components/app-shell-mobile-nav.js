@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { ThemeQuickToggle } from "@/components/theme-quick-toggle";
 import Logo from "@/app/assets/logo";
 import LucideIcon from "@/components/lucide-icon";
 import {
@@ -65,16 +66,19 @@ export function AppShellMobileNav({ pages }) {
           <Logo />
         </Link>
 
-        <button
-          type="button"
-          onClick={() => setIsOpen((current) => !current)}
-          aria-expanded={isOpen}
-          aria-controls="mobile-nav-menu"
-          className="inline-flex h-9 items-center gap-1.5 rounded-md border border-stone-300 px-3 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800"
-        >
-          <LucideIcon icon={isOpen ? X : Menu} size={14} />
-          {isOpen ? "Close" : "Menu"}
-        </button>
+        <div className="flex items-center gap-2">
+          <ThemeQuickToggle />
+          <button
+            type="button"
+            onClick={() => setIsOpen((current) => !current)}
+            aria-expanded={isOpen}
+            aria-controls="mobile-nav-menu"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-stone-300 px-3 text-xs font-semibold text-stone-800 transition hover:bg-stone-100 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800"
+          >
+            <LucideIcon icon={isOpen ? X : Menu} size={14} />
+            {isOpen ? "Close" : "Menu"}
+          </button>
+        </div>
       </div>
 
       {isOpen ? (
@@ -108,18 +112,6 @@ export function AppShellMobileNav({ pages }) {
               Settings
             </MobileMenuLink>
           </nav>
-
-          <div className="mt-3">
-            <Link
-              href="/settings/feeds/new"
-              className="flex h-[44px] items-center justify-center gap-2 rounded-md bg-stone-900 text-sm font-bold text-stone-50 no-underline transition hover:bg-stone-800 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300"
-              onClick={() => setIsOpen(false)}
-            >
-              <LucideIcon icon={PlusCircle} />
-              Create Feed
-            </Link>
-          </div>
-
           <div className="mt-4">
             <span className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 dark:text-stone-300">
               Feeds

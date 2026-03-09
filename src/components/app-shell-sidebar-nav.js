@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ThemeQuickToggle } from "@/components/theme-quick-toggle";
 import LucideIcon from "@/components/lucide-icon";
 import {
   Home,
@@ -194,16 +195,6 @@ export function AppShellSidebarNav({ pages }) {
         </MenuLink>
       </nav>
 
-      <div className="mt-5">
-        <Link 
-          href="/settings/feeds/new" 
-          className="flex items-center gap-2 bg-stone-900 text-stone-50 h-[48px] w-full rounded-md justify-center no-underline font-bold hover:bg-stone-800 hover:shadow-xl hover:shadow-slate-500/50 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300 dark:hover:shadow-stone-900/30"
-        >
-          <LucideIcon icon={PlusCircle} />
-          Create Feed
-        </Link>
-      </div>
-
       <div className="mt-6">
         <span className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-stone-600 dark:text-stone-300">
           Feeds
@@ -257,6 +248,10 @@ export function AppShellSidebarNav({ pages }) {
           </p>
         ) : null}
       </div>
+      <div className="mt-6 flex items-center justify-start">
+        <ThemeQuickToggle />
+      </div>
+
       <p className="mt-6 text-xs text-stone-600 dark:text-stone-300">
         Premium-quality, free forever, and open source.
       </p>
