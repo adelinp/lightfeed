@@ -21,7 +21,7 @@ function isLocalhost(hostname) {
   );
 }
 
-export function middleware(request) {
+export function proxy(request) {
   const { pathname, hostname } = request.nextUrl;
 
   if (!isProtectedPath(pathname)) {
