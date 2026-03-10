@@ -14,6 +14,7 @@ import {
   Settings,
   X,
   RotateCcw,
+  Info,
 } from "lucide";
 
 const PAGE_ORDER_COOKIE = "lightfeed_page_order";
@@ -205,6 +206,14 @@ export function AppShellMobileNav({ pages }) {
             >
               <LucideIcon icon={Settings} />
               Settings
+            </MobileMenuLink>
+            <MobileMenuLink
+              href="/about"
+              isActive={pathname === "/about"}
+              onNavigate={() => setIsOpen(false)}
+            >
+              <LucideIcon icon={Info} />
+              About
             </MobileMenuLink>
           </nav>
 

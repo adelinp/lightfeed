@@ -26,27 +26,6 @@ export function AppShell({ children }) {
             </div>
 
             <AppShellSidebarNav pages={pages} />
-            <div className="flex flex-col mt-4 space-y-2">
-              <small className="text-xs text-stone-600 dark:text-stone-400">
-                <a 
-                  href="https://github.com/Pixels4Cookies/lightfeed" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="hover:text-stone-900 dark:hover:text-stone-200 underline"
-                >
-                  View source on GitHub
-                </a>
-              </small>
-              <small className="text-[10px] text-stone-500 font-mono dark:text-stone-300">
-                v{version}
-              </small>
-              <small className="pt-1 text-xs text-stone-600 dark:text-stone-400">
-                i2b.ro customization
-              </small>
-              <small className="text-[10px] font-mono text-stone-500 dark:text-stone-300">
-                v0.1
-              </small>
-            </div>
           </aside>
 
           <main className="flex min-w-0 flex-col pt-5 lg:pt-8">

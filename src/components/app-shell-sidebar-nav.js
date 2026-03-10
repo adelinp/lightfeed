@@ -12,6 +12,7 @@ import {
   Settings,
   GripVertical,
   RotateCcw,
+  Info,
 } from "lucide";
 
 const PAGE_ORDER_COOKIE = "lightfeed_page_order";
@@ -267,6 +268,13 @@ export function AppShellSidebarNav({ pages }) {
           <LucideIcon icon={Settings} />
           Settings
         </MenuLink>
+        <MenuLink
+          href="/about"
+          isActive={pathname === "/about"}
+        >
+          <LucideIcon icon={Info} />
+          About
+        </MenuLink>
       </nav>
 
       <div className="mt-6">
@@ -327,23 +335,6 @@ export function AppShellSidebarNav({ pages }) {
       <div className="mt-6 flex items-center justify-start">
         <ThemeQuickToggle />
       </div>
-
-      <p className="mt-6 text-xs text-stone-600 dark:text-stone-300">
-        Premium-quality, free forever, and open source.
-      </p>
-
-      <hr className="mt-3 mb-2 border-stone-200 dark:border-stone-800" />
-      <p className="text-xs text-stone-500 dark:text-stone-300">
-        Logos by{" "}
-        <a
-          href="https://logo.dev"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-medium text-stone-700 hover:text-stone-900 dark:text-stone-300 dark:hover:text-stone-100"
-        >
-          logo.dev
-        </a>
-      </p>
     </>
   );
 }
