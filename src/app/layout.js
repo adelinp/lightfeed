@@ -1,4 +1,5 @@
 import "./globals.css";
+import Script from "next/script";
 import { ThemeProvider } from "@/components/theme-provider";
 import { getSiteConfig } from "@/lib/site-config";
 
@@ -101,6 +102,8 @@ export const viewport = {
 };
 
 export default function RootLayout({ children }) {
+  const cfToken = process.env.NEXT_PUBLIC_CF_ANALYTICS_TOKEN;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
@@ -108,6 +111,14 @@ export default function RootLayout({ children }) {
       </head>
       <body className="min-h-screen antialiased">
         <ThemeProvider>{children}</ThemeProvider>
+
+        {process.env.NODE_ENV === "production" && cfToken ? (
+          <Script
+            src="https://static.cloudflareinsights.com/beacon.min.js"
+            strategy="afterInteractive"
+            data-cf-beacon={JSON.stringify({ token: cfToken })}
+          />
+        ) : null}
       </body>
     </html>
   );
